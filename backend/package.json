@@ -1,0 +1,26 @@
+{
+  "name": "location-sharing-backend",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outdir ./dist",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "elysia": "^1.0.22",
+    "@elysiajs/cors": "^1.0.2",
+    "@elysiajs/jwt": "^1.0.2",
+    "@elysiajs/swagger": "^1.0.5",
+    "mongodb": "^6.6.2",
+    "bcrypt": "^5.1.1",
+    "firebase-admin": "^12.1.0",
+    "twilio": "^5.1.0",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "bun-types": "^1.1.8",
+    "@types/bcrypt": "^5.0.2",
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,94 @@
+# Environment files (keep .env.example, ignore actual configs)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Lock files
+**/bun.lock
+**/package-lock.json
+**/yarn.lock
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Mobile (React Native)
+mobile/android/app/build/
+mobile/android/.gradle/
+mobile/android/build/
+mobile/ios/Pods/
+mobile/ios/build/
+*.apk
+*.aab
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Android Gradle cache (all locations)
+**/.gradle/
+
+# Android Kotlin cache
+**/.kotlin/
+
+# Android C++/NDK build cache
+**/.cxx/
+**/CMakeFiles/
+**/.cmake/
+
+# Android build intermediates
+**/intermediates/
+
+# Keystore files (debug and release)
+*.keystore
+*.jks
+
+# Apple Push Notification keys
+*.p8
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+*.tsbuildinfo
+.eslintcache
+.cache/
+tmp/
+temp/
+
+# Firebase (keep example, ignore actual)
+google-services.json
+GoogleService-Info.plist
+
+# Bun
+bun.lockb
+
+# Planning/notes files
+plan file 1.txt
+*.txt
+
+# Windows reserved filenames
+nul
