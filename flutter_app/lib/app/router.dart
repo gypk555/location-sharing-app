@@ -14,10 +14,10 @@ import '../features/settings/screens/settings_screen.dart';
 import '../features/fake_call/screens/fake_call_screen.dart';
 import '../shared/widgets/main_scaffold.dart';
 
-// Listenable that notifies GoRouter when auth state changes
+/// Listenable that notifies GoRouter when auth state changes
 class _AuthNotifier extends ChangeNotifier {
   _AuthNotifier(this._ref) {
-    _ref.listen(authStateProvider, (_, __) => notifyListeners());
+    _ref.listen(authStateProvider, (prev, next) => notifyListeners());
   }
   final Ref _ref;
 }
