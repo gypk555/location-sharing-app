@@ -92,3 +92,9 @@ plan file 1.txt
 
 # Windows reserved filenames
 nul
+
+# Screenshots (temporary/debug)
+screenshot*.png
+
+# Claude Code settings (keep agents/, ignore personal settings)
+.claude/settings.json
