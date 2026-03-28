@@ -107,9 +107,15 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
               TextFormField(
                 controller: _nameController,
                 textCapitalization: TextCapitalization.words,
+                maxLength: Validators.maxNameLength,
+                inputFormatters: [
+                  Validators.nameInputFormatter,
+                  Validators.noEmojiFormatter,
+                ],
                 decoration: const InputDecoration(
                   labelText: 'Name *',
                   prefixIcon: Icon(Icons.person),
+                  counterText: '', // Hide character counter
                 ),
                 validator: Validators.validateName,
               ),
@@ -120,11 +126,14 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
               TextFormField(
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
+                maxLength: Validators.maxPhoneLength,
+                inputFormatters: [Validators.phoneInputFormatter],
                 decoration: const InputDecoration(
                   labelText: 'Phone Number *',
                   prefixIcon: Icon(Icons.phone),
                   hintText: '+91 98765 43210',
                   helperText: 'Valid phone number is critical for SOS alerts',
+                  counterText: '', // Hide character counter
                 ),
                 validator: Validators.validatePhone,
               ),
@@ -135,9 +144,12 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
               TextFormField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
+                maxLength: Validators.maxEmailLength,
+                inputFormatters: [Validators.emailInputFormatter],
                 decoration: const InputDecoration(
                   labelText: 'Email (optional)',
                   prefixIcon: Icon(Icons.email),
+                  counterText: '', // Hide character counter
                 ),
                 validator: (value) => Validators.validateEmail(value, allowEmpty: true),
               ),

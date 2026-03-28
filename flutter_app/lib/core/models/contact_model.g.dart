@@ -25,13 +25,16 @@ class ContactModelAdapter extends TypeAdapter<ContactModel> {
       isSosContact: fields[5] as bool,
       isLocationSharing: fields[6] as bool,
       addedAt: fields[7] as DateTime,
+      userId: fields[8] as String?,
+      isPrimary: fields[9] as bool,
+      isSynced: fields[10] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, ContactModel obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -47,7 +50,13 @@ class ContactModelAdapter extends TypeAdapter<ContactModel> {
       ..writeByte(6)
       ..write(obj.isLocationSharing)
       ..writeByte(7)
-      ..write(obj.addedAt);
+      ..write(obj.addedAt)
+      ..writeByte(8)
+      ..write(obj.userId)
+      ..writeByte(9)
+      ..write(obj.isPrimary)
+      ..writeByte(10)
+      ..write(obj.isSynced);
   }
 
   @override

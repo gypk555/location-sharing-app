@@ -161,12 +161,36 @@ class _ContactCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        contact.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            contact.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          // Sync status indicator
+                          if (!contact.isSynced)
+                            Tooltip(
+                              message: 'Not synced to cloud',
+                              child: Icon(
+                                Icons.cloud_off,
+                                size: 16,
+                                color: AppTheme.warningColor,
+                              ),
+                            )
+                          else
+                            Tooltip(
+                              message: 'Synced to cloud',
+                              child: Icon(
+                                Icons.cloud_done,
+                                size: 16,
+                                color: AppTheme.successColor,
+                              ),
+                            ),
+                        ],
                       ),
                       Text(
                         contact.phone,

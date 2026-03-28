@@ -64,8 +64,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         .read(authStateProvider.notifier)
         .registerWithEmail(email, password, name);
 
+    // Check mounted immediately after async gap to prevent crash
+    if (!mounted) return;
+
     final authState = ref.read(authStateProvider);
-    if (authState.isAuthenticated && mounted) {
+    if (authState.isAuthenticated) {
       context.go('/');
     }
   }
@@ -124,10 +127,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   controller: _nameController,
                   keyboardType: TextInputType.name,
                   textCapitalization: TextCapitalization.words,
+                  maxLength: Validators.maxNameLength,
+                  inputFormatters: [
+                    Validators.nameInputFormatter,
+                    Validators.noEmojiFormatter,
+                  ],
                   decoration: const InputDecoration(
                     labelText: 'Full Name',
                     prefixIcon: Icon(Icons.person_outline),
                     hintText: 'Enter your full name',
+                    counterText: '', // Hide character counter
                   ),
                   validator: _validateName,
                 ),
@@ -138,10 +147,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
+                  maxLength: Validators.maxEmailLength,
+                  inputFormatters: [Validators.emailInputFormatter],
                   decoration: const InputDecoration(
                     labelText: 'Email',
                     prefixIcon: Icon(Icons.email_outlined),
                     hintText: 'Enter your email',
+                    counterText: '', // Hide character counter
                   ),
                   validator: _validateEmail,
                 ),
@@ -152,11 +164,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
+                  maxLength: Validators.maxPasswordLength,
                   decoration: InputDecoration(
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outline),
                     hintText: 'Min 8 chars with upper, lower, number, special',
                     helperText: 'Use a strong password for your safety',
+                    counterText: '', // Hide character counter
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscurePassword
@@ -177,10 +191,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 TextFormField(
                   controller: _confirmPasswordController,
                   obscureText: _obscureConfirmPassword,
+                  maxLength: Validators.maxPasswordLength,
                   decoration: InputDecoration(
                     labelText: 'Confirm Password',
                     prefixIcon: const Icon(Icons.lock_outline),
                     hintText: 'Confirm your password',
+                    counterText: '', // Hide character counter
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscureConfirmPassword

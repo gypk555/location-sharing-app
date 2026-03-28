@@ -2,8 +2,11 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/user_model.dart';
+import '../models/contact_model.dart';
+import '../models/location_model.dart';
 import '../../shared/constants/app_constants.dart';
 import '../../shared/utils/logger.dart';
+import '../../shared/utils/validators.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -13,8 +16,19 @@ class AuthService {
   final _uuid = const Uuid();
   UserModel? _currentUser;
 
+  /// Cached Hive box for performance
+  Box<UserModel>? _userBox;
+
   UserModel? get currentUser => _currentUser;
   bool get isAuthenticated => _currentUser != null;
+
+  /// Get cached user box (performance: avoid reopening on every operation)
+  Future<Box<UserModel>> get _box async {
+    if (_userBox == null || !_userBox!.isOpen) {
+      _userBox = await Hive.openBox<UserModel>(AppConstants.userBoxName);
+    }
+    return _userBox!;
+  }
 
   SupabaseClient? get _supabase {
     try {
@@ -30,7 +44,7 @@ class AuthService {
 
   Future<void> _loadStoredUser() async {
     try {
-      final box = await Hive.openBox<UserModel>(AppConstants.userBoxName);
+      final box = await _box;
       if (box.isNotEmpty) {
         _currentUser = box.getAt(0);
       }
@@ -41,7 +55,7 @@ class AuthService {
 
   Future<void> _saveUser(UserModel user) async {
     try {
-      final box = await Hive.openBox<UserModel>(AppConstants.userBoxName);
+      final box = await _box;
       await box.clear();
       await box.add(user);
       _currentUser = user;
@@ -52,25 +66,41 @@ class AuthService {
 
   // Phone OTP Authentication
   Future<void> sendPhoneOtp(String phone) async {
+    // Normalize phone to E.164 format before sending to Supabase
+    final normalizedPhone = Validators.normalizePhone(phone);
+
+    // Validate E.164 format
+    if (!Validators.isValidE164(normalizedPhone)) {
+      throw Exception('Invalid phone format. Use +91XXXXXXXXXX');
+    }
+
     if (_supabase != null) {
-      await _supabase!.auth.signInWithOtp(phone: phone);
+      await _supabase!.auth.signInWithOtp(phone: normalizedPhone);
     }
     // In demo mode, we skip actual OTP
   }
 
   Future<UserModel> verifyPhoneOtp(String phone, String otp) async {
+    // Normalize phone to E.164 format
+    final normalizedPhone = Validators.normalizePhone(phone);
+
+    // Validate E.164 format
+    if (!Validators.isValidE164(normalizedPhone)) {
+      throw Exception('Invalid phone format. Use +91XXXXXXXXXX');
+    }
+
     UserModel user;
 
     if (_supabase != null) {
       final response = await _supabase!.auth.verifyOTP(
-        phone: phone,
+        phone: normalizedPhone,
         token: otp,
         type: OtpType.sms,
       );
 
       user = UserModel(
         id: response.user?.id ?? _uuid.v4(),
-        phone: phone,
+        phone: normalizedPhone,
         authProvider: 'phone',
         createdAt: DateTime.now(),
       );
@@ -81,7 +111,7 @@ class AuthService {
       }
       user = UserModel(
         id: 'demo-phone-${_uuid.v4()}',
-        phone: phone,
+        phone: normalizedPhone,
         authProvider: 'phone',
         createdAt: DateTime.now(),
       );
@@ -97,18 +127,20 @@ class AuthService {
     String password,
     String name,
   ) async {
+    // Normalize email to lowercase for consistency
+    final normalizedEmail = email.trim().toLowerCase();
     UserModel user;
 
     if (_supabase != null) {
       final response = await _supabase!.auth.signUp(
-        email: email,
+        email: normalizedEmail,
         password: password,
         data: {'name': name},
       );
 
       user = UserModel(
         id: response.user?.id ?? _uuid.v4(),
-        email: email,
+        email: normalizedEmail,
         name: name,
         authProvider: 'email',
         createdAt: DateTime.now(),
@@ -117,7 +149,7 @@ class AuthService {
       // Demo mode
       user = UserModel(
         id: 'demo-email-${_uuid.v4()}',
-        email: email,
+        email: normalizedEmail,
         name: name,
         authProvider: 'email',
         createdAt: DateTime.now(),
@@ -129,17 +161,19 @@ class AuthService {
   }
 
   Future<UserModel> loginWithEmail(String email, String password) async {
+    // Normalize email to lowercase for consistency
+    final normalizedEmail = email.trim().toLowerCase();
     UserModel user;
 
     if (_supabase != null) {
       final response = await _supabase!.auth.signInWithPassword(
-        email: email,
+        email: normalizedEmail,
         password: password,
       );
 
       user = UserModel(
         id: response.user?.id ?? _uuid.v4(),
-        email: email,
+        email: normalizedEmail,
         name: response.user?.userMetadata?['name'] as String?,
         authProvider: 'email',
         createdAt: DateTime.now(),
@@ -148,8 +182,8 @@ class AuthService {
       // Demo mode
       user = UserModel(
         id: 'demo-email-${_uuid.v4()}',
-        email: email,
-        name: email.split('@').first,
+        email: normalizedEmail,
+        name: normalizedEmail.split('@').first,
         authProvider: 'email',
         createdAt: DateTime.now(),
       );
@@ -191,15 +225,52 @@ class AuthService {
 
   Future<void> signOut() async {
     try {
+      // Clear in-memory user immediately for security
+      _currentUser = null;
+
       if (_supabase != null) {
         await _supabase!.auth.signOut();
       }
 
-      final box = await Hive.openBox<UserModel>(AppConstants.userBoxName);
-      await box.clear();
-      _currentUser = null;
+      // Clear all user-specific data from local storage
+      await _clearAllUserData();
+
+      AppLogger.info('User signed out and all data cleared');
     } catch (e) {
       AppLogger.error('Error signing out', e);
+      // Ensure user is still cleared even on error
+      _currentUser = null;
+    }
+  }
+
+  /// Clear all user-specific data from Hive boxes
+  /// Uses parallel clearing for better performance
+  Future<void> _clearAllUserData() async {
+    try {
+      // Open all boxes in parallel for performance
+      final futures = await Future.wait([
+        Hive.openBox<UserModel>(AppConstants.userBoxName),
+        Hive.openBox<ContactModel>(AppConstants.contactsBoxName),
+        Hive.openBox<LocationModel>(AppConstants.locationBoxName),
+      ]);
+
+      final userBox = futures[0] as Box<UserModel>;
+      final contactsBox = futures[1] as Box<ContactModel>;
+      final locationBox = futures[2] as Box<LocationModel>;
+
+      // Clear all boxes in parallel for performance
+      await Future.wait([
+        userBox.clear(),
+        contactsBox.clear(),
+        locationBox.clear(),
+      ]);
+
+      // Clear cached box reference
+      _userBox = null;
+
+      AppLogger.info('All user data cleared from local storage');
+    } catch (e) {
+      AppLogger.error('Error clearing user data', e);
     }
   }
 
@@ -214,6 +285,30 @@ class AuthService {
       photoUrl: photoUrl ?? _currentUser!.photoUrl,
     );
 
+    await _saveUser(updatedUser);
+  }
+
+  /// Update user's phone number with E.164 validation.
+  /// Phone must be in E.164 format (e.g., +917418529635).
+  Future<void> updatePhone(String phone) async {
+    if (_currentUser == null) return;
+
+    // Normalize and validate phone
+    final normalizedPhone = Validators.normalizePhone(phone);
+
+    if (!Validators.isValidE164(normalizedPhone)) {
+      throw Exception('Invalid phone format. Use +91XXXXXXXXXX');
+    }
+
+    // Update in Supabase if available
+    if (_supabase != null) {
+      await _supabase!.auth.updateUser(
+        UserAttributes(phone: normalizedPhone),
+      );
+    }
+
+    // Update local user
+    final updatedUser = _currentUser!.copyWith(phone: normalizedPhone);
     await _saveUser(updatedUser);
   }
 }

@@ -18,6 +18,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isPhoneLogin = true;
+  bool _obscurePassword = true;
+  String? _phoneError;
+  String? _emailError;
+  String? _passwordError;
 
   @override
   void dispose() {
@@ -27,20 +31,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  void _clearErrors() {
+    setState(() {
+      _phoneError = null;
+      _emailError = null;
+      _passwordError = null;
+    });
+  }
+
   Future<void> _handlePhoneLogin() async {
+    _clearErrors();
     final phone = _phoneController.text.trim();
 
     // Validate phone number
     final phoneError = Validators.validatePhone(phone);
     if (phoneError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(phoneError)),
-      );
+      setState(() => _phoneError = phoneError);
       return;
     }
 
     // Normalize phone number (add country code if needed)
     final normalizedPhone = Validators.normalizePhone(phone);
+
+    // Validate E.164 format after normalization
+    if (!Validators.isValidE164(normalizedPhone)) {
+      setState(() => _phoneError = 'Invalid phone format. Use +91XXXXXXXXXX');
+      return;
+    }
 
     await ref.read(authStateProvider.notifier).sendPhoneOtp(normalizedPhone);
     if (mounted) {
@@ -49,17 +66,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _handleEmailLogin() async {
+    _clearErrors();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
-    if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter email and password')),
-      );
+    // Validate email
+    final emailError = Validators.validateEmail(email);
+    if (emailError != null) {
+      setState(() => _emailError = emailError);
+      return;
+    }
+
+    // Validate password is not empty
+    if (password.isEmpty) {
+      setState(() => _passwordError = 'Please enter your password');
+      return;
+    }
+
+    // Minimum password length check for login
+    if (password.length < 6) {
+      setState(() => _passwordError = 'Password must be at least 6 characters');
       return;
     }
 
     await ref.read(authStateProvider.notifier).loginWithEmail(email, password);
+
+    // Check mounted immediately after async gap to prevent crash
+    if (!mounted) return;
+
+    // Navigation is handled by auth state listener in router,
+    // but we can check here for any additional logic if needed
   }
 
   @override
@@ -120,11 +156,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 TextField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
+                  maxLength: Validators.maxPhoneLength,
+                  inputFormatters: [Validators.phoneInputFormatter],
+                  onChanged: (_) {
+                    if (_phoneError != null) {
+                      setState(() => _phoneError = null);
+                    }
+                  },
+                  decoration: InputDecoration(
                     labelText: 'Phone Number',
-                    prefixIcon: Icon(Icons.phone),
+                    prefixIcon: const Icon(Icons.phone),
                     hintText: '+91 98765 43210',
                     helperText: 'Enter 10-digit number or include country code',
+                    errorText: _phoneError,
+                    errorMaxLines: 2,
+                    counterText: '', // Hide character counter
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -142,18 +188,46 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 TextField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
+                  maxLength: Validators.maxEmailLength,
+                  inputFormatters: [Validators.emailInputFormatter],
+                  onChanged: (_) {
+                    if (_emailError != null) {
+                      setState(() => _emailError = null);
+                    }
+                  },
+                  decoration: InputDecoration(
                     labelText: 'Email',
-                    prefixIcon: Icon(Icons.email),
+                    prefixIcon: const Icon(Icons.email),
+                    hintText: 'your@email.com',
+                    errorText: _emailError,
+                    counterText: '', // Hide character counter
                   ),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
+                  obscureText: _obscurePassword,
+                  maxLength: Validators.maxPasswordLength,
+                  onChanged: (_) {
+                    if (_passwordError != null) {
+                      setState(() => _passwordError = null);
+                    }
+                  },
+                  decoration: InputDecoration(
                     labelText: 'Password',
-                    prefixIcon: Icon(Icons.lock),
+                    prefixIcon: const Icon(Icons.lock),
+                    errorText: _passwordError,
+                    counterText: '', // Hide character counter
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                      ),
+                      onPressed: () {
+                        setState(() => _obscurePassword = !_obscurePassword);
+                      },
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/providers/contacts_provider.dart';
 import '../../../core/providers/sos_provider.dart';
 import '../../../shared/theme/app_theme.dart';
 
@@ -158,6 +159,32 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: 24),
 
+          // Data & Backup
+          _SectionHeader(title: 'Data & Backup'),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.cloud_upload),
+                  title: const Text('Export Contacts'),
+                  subtitle: const Text('Share backup file'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _exportContacts(context, ref),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.cloud_download),
+                  title: const Text('Import Contacts'),
+                  subtitle: const Text('Restore from backup'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _importContacts(context, ref),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
           // About & Support
           _SectionHeader(title: 'About'),
           Card(
@@ -223,6 +250,189 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _exportContacts(BuildContext context, WidgetRef ref) async {
+    final contacts = ref.read(contactsProvider).contacts;
+
+    if (contacts.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('No contacts to export. Add some contacts first.'),
+            backgroundColor: AppTheme.warningColor,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Preparing export...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final result = await ref.read(contactsProvider.notifier).exportContacts();
+
+    if (context.mounted) {
+      Navigator.pop(context); // Close loading dialog
+
+      if (result.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported ${result.contactCount} contacts'),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      } else {
+        // Show detailed error dialog for failures
+        _showErrorDialog(
+          context,
+          title: 'Export Failed',
+          error: result.error ?? 'Unknown error',
+          recoverySuggestion: result.recoverySuggestion,
+          errorCode: result.errorCode,
+        );
+      }
+    }
+  }
+
+  Future<void> _importContacts(BuildContext context, WidgetRef ref) async {
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Importing contacts...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final result =
+        await ref.read(contactsProvider.notifier).importContactsFromFile();
+
+    if (context.mounted) {
+      Navigator.pop(context); // Close loading dialog
+
+      if (result.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Imported ${result.contacts.length} contacts'),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      } else if (result.error != 'No file selected') {
+        // Show detailed error dialog for failures
+        _showErrorDialog(
+          context,
+          title: 'Import Failed',
+          error: result.error ?? 'Unknown error',
+          recoverySuggestion: result.recoverySuggestion,
+          errorCode: result.errorCode,
+        );
+      }
+    }
+  }
+
+  void _showErrorDialog(
+    BuildContext context, {
+    required String title,
+    required String error,
+    String? recoverySuggestion,
+    String? errorCode,
+  }) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.error_outline, color: AppTheme.errorColor),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(error),
+            if (recoverySuggestion != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.lightbulb_outline,
+                      size: 18,
+                      color: AppTheme.primaryColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        recoverySuggestion,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (errorCode != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Error code: $errorCode',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showCountdownPicker(BuildContext context, WidgetRef ref, int current) {
     showDialog(
       context: context,
@@ -237,6 +447,25 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   void _showLogoutDialog(BuildContext context, WidgetRef ref) {
+    final contactsState = ref.read(contactsProvider);
+    final unsyncedContacts = contactsState.unsyncedContacts;
+
+    if (unsyncedContacts.isEmpty) {
+      // No unsynced contacts, show simple logout dialog
+      _showSimpleLogoutDialog(context, ref);
+    } else {
+      // Has unsynced contacts, show warning dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => _UnsyncedContactsLogoutDialog(
+          unsyncedCount: unsyncedContacts.length,
+        ),
+      );
+    }
+  }
+
+  void _showSimpleLogoutDialog(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -248,9 +477,12 @@ class SettingsScreen extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              ref.read(authStateProvider.notifier).signOut();
-              Navigator.pop(context);
+            onPressed: () async {
+              await ref.read(contactsProvider.notifier).clearAll();
+              await ref.read(authStateProvider.notifier).signOut();
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
             },
             style: TextButton.styleFrom(foregroundColor: AppTheme.errorColor),
             child: const Text('Logout'),
@@ -336,6 +568,261 @@ class _CountdownPickerDialogState extends State<_CountdownPickerDialog> {
           child: const Text('OK'),
         ),
       ],
+    );
+  }
+}
+
+/// Dialog for handling logout when unsynced contacts exist
+class _UnsyncedContactsLogoutDialog extends ConsumerStatefulWidget {
+  final int unsyncedCount;
+
+  const _UnsyncedContactsLogoutDialog({required this.unsyncedCount});
+
+  @override
+  ConsumerState<_UnsyncedContactsLogoutDialog> createState() =>
+      _UnsyncedContactsLogoutDialogState();
+}
+
+class _UnsyncedContactsLogoutDialogState
+    extends ConsumerState<_UnsyncedContactsLogoutDialog> {
+  int _retryCount = 0;
+  bool _isSyncing = false;
+  bool _syncFailed = false;
+  String? _statusMessage;
+  String? _recoverySuggestion;
+
+  static const int _maxRetries = 3;
+
+  Future<void> _retrySync() async {
+    setState(() {
+      _isSyncing = true;
+      _statusMessage = 'Syncing... (Attempt ${_retryCount + 1}/$_maxRetries)';
+    });
+
+    // Check if online first
+    final isOnline = await ref.read(contactsProvider.notifier).isOnline();
+    if (!isOnline) {
+      setState(() {
+        _isSyncing = false;
+        _statusMessage = 'No internet connection. Please check your network.';
+      });
+      return;
+    }
+
+    final result = await ref.read(contactsProvider.notifier).syncToSupabase();
+
+    if (result.success) {
+      setState(() {
+        _isSyncing = false;
+        _statusMessage = 'All contacts synced!';
+        _recoverySuggestion = null;
+      });
+
+      // Wait a moment then proceed with logout
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) {
+        await _performLogout();
+      }
+    } else {
+      _retryCount++;
+      if (_retryCount >= _maxRetries) {
+        setState(() {
+          _isSyncing = false;
+          _syncFailed = true;
+          _statusMessage = result.wasOffline
+              ? 'No internet connection after $_maxRetries attempts.'
+              : 'Sync failed after $_maxRetries attempts. ${result.error ?? "Unknown error"}';
+          _recoverySuggestion = result.recoverySuggestion ??
+              'Export your contacts before logging out to avoid data loss.';
+        });
+      } else {
+        setState(() {
+          _isSyncing = false;
+          _statusMessage =
+              '${result.error ?? "Sync failed"}. ${_maxRetries - _retryCount} retries left.';
+          _recoverySuggestion = result.recoverySuggestion;
+        });
+      }
+    }
+  }
+
+  Future<void> _exportAndLogout() async {
+    setState(() {
+      _isSyncing = true;
+      _statusMessage = 'Exporting contacts...';
+    });
+
+    final result = await ref.read(contactsProvider.notifier).exportContacts();
+
+    if (result.success) {
+      setState(() {
+        _statusMessage = 'Exported ${result.contactCount} contacts!';
+      });
+
+      // Show success and logout
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported ${result.contactCount} contacts'),
+            backgroundColor: AppTheme.successColor,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        await Future.delayed(const Duration(milliseconds: 500));
+        await _performLogout();
+      }
+    } else {
+      setState(() {
+        _isSyncing = false;
+        _statusMessage = 'Export failed: ${result.error}';
+      });
+    }
+  }
+
+  Future<void> _performLogout() async {
+    await ref.read(contactsProvider.notifier).clearAll();
+    await ref.read(authStateProvider.notifier).signOut();
+    if (mounted) {
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.warning_amber, color: AppTheme.warningColor),
+          const SizedBox(width: 8),
+          const Text('Unsynced Contacts'),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'You have ${widget.unsyncedCount} contact(s) not synced to cloud.',
+            style: const TextStyle(fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'These contacts will be lost if you logout without syncing.',
+            style: TextStyle(color: Colors.grey),
+          ),
+          if (_statusMessage != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _syncFailed
+                    ? AppTheme.errorColor.withValues(alpha: 0.1)
+                    : AppTheme.primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_isSyncing)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Icon(
+                      _syncFailed ? Icons.error : Icons.info,
+                      size: 16,
+                      color: _syncFailed
+                          ? AppTheme.errorColor
+                          : AppTheme.primaryColor,
+                    ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _statusMessage!,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: _syncFailed
+                            ? AppTheme.errorColor
+                            : AppTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // Show recovery suggestion
+          if (_recoverySuggestion != null && _syncFailed) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.lightbulb_outline,
+                    size: 16,
+                    color: AppTheme.primaryColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _recoverySuggestion!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: _isSyncing
+          ? []
+          : _syncFailed
+              ? [
+                  // After max retries failed - show export option
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: _exportAndLogout,
+                    child: const Text('Export & Logout'),
+                  ),
+                  TextButton(
+                    onPressed: _performLogout,
+                    style:
+                        TextButton.styleFrom(foregroundColor: AppTheme.errorColor),
+                    child: const Text('Logout Anyway'),
+                  ),
+                ]
+              : [
+                  // Initial state or retries remaining
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: _retrySync,
+                    child: Text(_retryCount == 0 ? 'Retry Sync' : 'Retry Again'),
+                  ),
+                  TextButton(
+                    onPressed: _performLogout,
+                    style:
+                        TextButton.styleFrom(foregroundColor: AppTheme.errorColor),
+                    child: const Text('Logout Anyway'),
+                  ),
+                ],
     );
   }
 }
