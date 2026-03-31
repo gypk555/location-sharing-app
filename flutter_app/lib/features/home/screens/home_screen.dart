@@ -4,14 +4,74 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/location_provider.dart';
+import '../../../core/providers/password_breach_provider.dart';
 import '../../../core/providers/sos_provider.dart';
 import '../../../shared/theme/app_theme.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Check for breach warning after frame is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showBreachWarningIfNeeded();
+    });
+  }
+
+  /// Show breach warning banner if flag is set
+  void _showBreachWarningIfNeeded() {
+    final shouldShow = ref.read(showBreachWarningProvider);
+    if (!shouldShow) return;
+
+    // Reset the flag immediately
+    ref.read(showBreachWarningProvider.notifier).state = false;
+
+    // Show the banner
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    scaffoldMessenger.showMaterialBanner(
+      MaterialBanner(
+        backgroundColor: Colors.orange.shade50,
+        leading: const Icon(Icons.warning_amber, color: Colors.orange),
+        content: const Text(
+          'Your password was found in a data breach. '
+          'We recommend changing it for your safety.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              scaffoldMessenger.hideCurrentMaterialBanner();
+              // TODO: Navigate to change password screen when implemented
+            },
+            child: const Text('Change Password'),
+          ),
+          TextButton(
+            onPressed: () {
+              // Set "don't show again" flag and persist to storage
+              ref.read(dontShowBreachWarningProvider.notifier).setDontShowAgain(true);
+              scaffoldMessenger.hideCurrentMaterialBanner();
+            },
+            child: const Text("Don't Show Again"),
+          ),
+          TextButton(
+            onPressed: () {
+              scaffoldMessenger.hideCurrentMaterialBanner();
+            },
+            child: const Text('Dismiss'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final authState = ref.watch(authStateProvider);
     final locationState = ref.watch(locationProvider);
     final sosState = ref.watch(sosProvider);

@@ -1,5 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/password_breach_service.dart';
+
+/// Key prefix for storing "Don't show again" preference (user-specific)
+const _kDontShowBreachWarningKeyPrefix = 'dont_show_breach_warning_';
 
 /// Provider for the password breach service (auto-disposed to clean up Dio client)
 final passwordBreachServiceProvider = Provider.autoDispose<PasswordBreachService>((ref) {
@@ -94,3 +98,53 @@ final passwordBreachCheckProvider =
     StateNotifierProvider<PasswordBreachCheckNotifier, PasswordBreachCheckState>((ref) {
   return PasswordBreachCheckNotifier();
 });
+
+/// Provider to track if we need to show breach warning after login on HomeScreen
+/// This persists across navigation so the warning can be shown after redirect
+final showBreachWarningProvider = StateProvider<bool>((ref) => false);
+
+/// Provider to track if user chose "Don't show again" for breach warnings
+/// Persists across app restarts using SharedPreferences (user-specific)
+final dontShowBreachWarningProvider = StateNotifierProvider<DontShowBreachWarningNotifier, bool>((ref) {
+  return DontShowBreachWarningNotifier();
+});
+
+/// Notifier that syncs "Don't show again" preference with SharedPreferences
+/// Preference is stored per-user to handle multiple users on same device
+class DontShowBreachWarningNotifier extends StateNotifier<bool> {
+  String? _currentUserId;
+
+  DontShowBreachWarningNotifier() : super(false);
+
+  /// Get the storage key for current user
+  String get _storageKey => '$_kDontShowBreachWarningKeyPrefix${_currentUserId ?? 'anonymous'}';
+
+  /// Load preference for a specific user (call this after login)
+  Future<void> loadForUser(String userId) async {
+    _currentUserId = userId;
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool(_storageKey) ?? false;
+  }
+
+  /// Set preference and save to SharedPreferences
+  Future<void> setDontShowAgain(bool value) async {
+    if (_currentUserId == null) return;
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_storageKey, value);
+  }
+
+  /// Reset preference for current user
+  Future<void> reset() async {
+    state = false;
+    if (_currentUserId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_storageKey);
+  }
+
+  /// Clear state on logout (don't delete preference, just reset in-memory state)
+  void clearOnLogout() {
+    _currentUserId = null;
+    state = false;
+  }
+}

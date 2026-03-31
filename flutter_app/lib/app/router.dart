@@ -3,9 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/providers/auth_provider.dart';
-import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/otp_screen.dart';
-import '../features/auth/screens/register_screen.dart';
+import '../features/auth/screens/unified_auth_screen.dart';
 import '../features/home/screens/home_screen.dart';
 import '../features/sos/screens/sos_screen.dart';
 import '../features/contacts/screens/contacts_screen.dart';
@@ -26,21 +25,20 @@ final routerProvider = Provider<GoRouter>((ref) {
   final authNotifier = _AuthNotifier(ref);
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/auth',
     refreshListenable: authNotifier,
     redirect: (context, state) {
       final authState = ref.read(authStateProvider);
       final isLoggedIn = authState.isAuthenticated;
       final isLoading = authState.isLoading;
-      final isAuthRoute = state.matchedLocation == '/login' ||
-          state.matchedLocation == '/otp' ||
-          state.matchedLocation == '/register';
+      final isAuthRoute = state.matchedLocation == '/auth' ||
+          state.matchedLocation == '/otp';
 
       // Still loading - allow current route
       if (isLoading) return null;
 
       // Not logged in and not on auth page
-      if (!isLoggedIn && !isAuthRoute) return '/login';
+      if (!isLoggedIn && !isAuthRoute) return '/auth';
 
       // Logged in but on auth page
       if (isLoggedIn && isAuthRoute) return '/';
@@ -48,10 +46,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      // Auth routes
+      // Auth routes - unified auth screen replaces login/register
       GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
+        path: '/auth',
+        builder: (context, state) => const UnifiedAuthScreen(),
       ),
       GoRoute(
         path: '/otp',
@@ -59,10 +57,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           final phone = state.extra as String? ?? '';
           return OtpScreen(phone: phone);
         },
-      ),
-      GoRoute(
-        path: '/register',
-        builder: (context, state) => const RegisterScreen(),
       ),
 
       // Main app with bottom navigation

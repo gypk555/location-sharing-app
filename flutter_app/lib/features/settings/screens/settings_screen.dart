@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/contacts_provider.dart';
+import '../../../core/providers/password_breach_provider.dart';
 import '../../../core/providers/sos_provider.dart';
 import '../../../shared/theme/app_theme.dart';
 
@@ -510,6 +511,8 @@ class SettingsScreen extends ConsumerWidget {
           TextButton(
             onPressed: () async {
               await ref.read(contactsProvider.notifier).clearAll();
+              // Clear user-specific breach warning preference
+              ref.read(dontShowBreachWarningProvider.notifier).clearOnLogout();
               await ref.read(authStateProvider.notifier).signOut();
               if (context.mounted) {
                 Navigator.pop(context);
@@ -712,6 +715,8 @@ class _UnsyncedContactsLogoutDialogState
 
   Future<void> _performLogout() async {
     await ref.read(contactsProvider.notifier).clearAll();
+    // Clear user-specific breach warning preference
+    ref.read(dontShowBreachWarningProvider.notifier).clearOnLogout();
     await ref.read(authStateProvider.notifier).signOut();
     if (mounted) {
       Navigator.pop(context);
