@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/providers/password_breach_provider.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/utils/validators.dart';
 
@@ -25,6 +26,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   void dispose() {
+    // Clear any MaterialBanners to prevent memory leak
+    ScaffoldMessenger.of(context).clearMaterialBanners();
     _phoneController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -94,8 +97,60 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // Check mounted immediately after async gap to prevent crash
     if (!mounted) return;
 
-    // Navigation is handled by auth state listener in router,
-    // but we can check here for any additional logic if needed
+    // Check if login was successful
+    final authState = ref.read(authStateProvider);
+    if (authState.isAuthenticated) {
+      // Background breach check after successful login
+      _checkPasswordBreachPostLogin(password);
+    }
+
+    // Navigation is handled by auth state listener in router
+  }
+
+  /// Check password against breach database after successful login.
+  /// Shows non-blocking banner if password is compromised.
+  Future<void> _checkPasswordBreachPostLogin(String password) async {
+    // Store password snapshot to check for race condition
+    final passwordSnapshot = password;
+
+    final result = await ref
+        .read(passwordBreachServiceProvider)
+        .checkPassword(passwordSnapshot);
+
+    // Race condition check: verify password hasn't changed during async gap
+    if (_passwordController.text != passwordSnapshot) return;
+    if (!mounted) return;
+
+    if (result.isBreached) {
+      // Clear any existing banners first
+      ScaffoldMessenger.of(context).clearMaterialBanners();
+      // Show non-blocking MaterialBanner to warn user
+      ScaffoldMessenger.of(context).showMaterialBanner(
+        MaterialBanner(
+          backgroundColor: Colors.orange.shade50,
+          leading: const Icon(Icons.warning_amber, color: Colors.orange),
+          content: const Text(
+            'Your password was found in a data breach. '
+            'We recommend changing it for your safety.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+                // TODO: Navigate to change password screen when implemented
+              },
+              child: const Text('Change Password'),
+            ),
+            TextButton(
+              onPressed: () {
+                ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+              },
+              child: const Text('Dismiss'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   @override

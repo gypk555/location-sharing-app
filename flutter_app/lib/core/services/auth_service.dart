@@ -174,6 +174,35 @@ class AuthService {
     return user;
   }
 
+  /// Check if email is already registered in Supabase.
+  /// Uses RPC function for efficient lookup.
+  /// Returns true if email exists, false otherwise.
+  /// Fails open (returns false on errors) to avoid blocking legitimate registrations.
+  Future<bool> checkEmailExists(String email) async {
+    final normalizedEmail = email.trim().toLowerCase();
+
+    // Validate email format first
+    if (Validators.validateEmail(normalizedEmail) != null) {
+      return false; // Invalid email can't exist
+    }
+
+    if (_supabase == null) {
+      return false; // Demo mode - allow all
+    }
+
+    try {
+      final response = await _supabase!.rpc(
+        'check_email_exists',
+        params: {'email_input': normalizedEmail},
+      );
+      return response as bool? ?? false;
+    } catch (e) {
+      AppLogger.error('Email existence check failed', e);
+      // Fail open - don't block registration on error
+      return false;
+    }
+  }
+
   // Email Authentication
   Future<UserModel> registerWithEmail(
     String email,

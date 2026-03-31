@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/providers/password_breach_provider.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/utils/validators.dart';
+import '../../../shared/widgets/password_breach_indicator.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -19,16 +21,88 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _confirmPasswordFocusNode = FocusNode();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
+  // Password breach check state
+  String _lastCheckedPassword = '';
+  bool _hasCheckedBreach = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Reset breach check state when screen loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(passwordBreachCheckProvider.notifier).reset();
+    });
+
+    // Check breach when confirm password field is focused
+    _confirmPasswordFocusNode.addListener(_onConfirmPasswordFocus);
+  }
+
+  /// Trigger breach check when user focuses on confirm password field
+  void _onConfirmPasswordFocus() {
+    if (_confirmPasswordFocusNode.hasFocus && !_hasCheckedBreach) {
+      final password = _passwordController.text;
+      if (password.length >= 8) {
+        _hasCheckedBreach = true;
+        _checkPasswordBreach(password);
+      }
+    }
+  }
+
   @override
   void dispose() {
+    // Reset breach state to prevent stale data on next visit
+    ref.read(passwordBreachCheckProvider.notifier).reset();
+    // Clean up focus node
+    _confirmPasswordFocusNode.removeListener(_onConfirmPasswordFocus);
+    _confirmPasswordFocusNode.dispose();
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  /// Handle password field changes - reset breach check flag
+  void _onPasswordChanged(String value) {
+    // Reset breach check flag so it re-checks when confirm field is focused
+    _hasCheckedBreach = false;
+
+    // Clear indicator if password doesn't meet basic requirements
+    if (value.length < 8) {
+      ref.read(passwordBreachCheckProvider.notifier).reset();
+    }
+  }
+
+  /// Check password against HIBP with race condition handling
+  Future<void> _checkPasswordBreach(String password) async {
+    // Check mounted BEFORE making API call to prevent unnecessary requests
+    if (!mounted) return;
+
+    _lastCheckedPassword = password;
+
+    ref.read(passwordBreachCheckProvider.notifier).setChecking();
+
+    final result = await ref
+        .read(passwordBreachServiceProvider)
+        .checkPassword(password);
+
+    // Race condition fix: Only update if password hasn't changed
+    if (_lastCheckedPassword != password) return;
+    if (!mounted) return;
+
+    ref.read(passwordBreachCheckProvider.notifier).setResult(result);
+  }
+
+  /// Retry breach check (for error state)
+  void _retryBreachCheck() {
+    final password = _passwordController.text;
+    if (password.length >= 8) {
+      _checkPasswordBreach(password);
+    }
   }
 
   String? _validateName(String? value) {
@@ -56,8 +130,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final name = _nameController.text.trim();
+    final breachState = ref.read(passwordBreachCheckProvider);
+
+    // Show warning dialog if password is breached (user preference: warn but allow)
+    if (breachState.isBreached) {
+      final proceed = await _showBreachWarningDialog();
+      if (!proceed) return;
+    }
+
     final email = _emailController.text.trim();
+    final name = _nameController.text.trim();
     final password = _passwordController.text;
 
     await ref
@@ -68,14 +150,81 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     if (!mounted) return;
 
     final authState = ref.read(authStateProvider);
+
+    // Handle duplicate email via error response (prevents user enumeration)
+    if (authState.error != null &&
+        (authState.error!.toLowerCase().contains('already') ||
+         authState.error!.toLowerCase().contains('exists') ||
+         authState.error!.toLowerCase().contains('registered'))) {
+      _showEmailExistsDialog();
+      return;
+    }
+
     if (authState.isAuthenticated) {
       context.go('/');
     }
   }
 
+  /// Show dialog when email is already registered
+  void _showEmailExistsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.email, color: Colors.blue, size: 48),
+        title: const Text('Email Already Registered'),
+        content: const Text(
+          'This email is already registered. Please log in instead.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.go('/login');
+            },
+            child: const Text('Go to Login'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show warning dialog when user tries to register with a breached password
+  Future<bool> _showBreachWarningDialog() async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            icon: const Icon(Icons.warning_amber, color: Colors.orange, size: 48),
+            title: const Text('Password Found in Data Breach'),
+            content: const Text(
+              'This password has appeared in known data breaches and may be compromised.\n\n'
+              'For your safety, we strongly recommend choosing a different password.\n\n'
+              'Do you want to continue anyway?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Choose Different Password'),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.orange),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Continue Anyway'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authStateProvider);
+    final breachState = ref.watch(passwordBreachCheckProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -165,6 +314,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   maxLength: Validators.maxPasswordLength,
+                  onChanged: _onPasswordChanged,
                   decoration: InputDecoration(
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outline),
@@ -185,11 +335,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   validator: _validatePassword,
                 ),
 
+                // Password breach indicator
+                PasswordBreachIndicator(
+                  state: breachState,
+                  onRetry: _retryBreachCheck,
+                ),
+
                 const SizedBox(height: 16),
 
                 // Confirm Password field
                 TextFormField(
                   controller: _confirmPasswordController,
+                  focusNode: _confirmPasswordFocusNode,
                   obscureText: _obscureConfirmPassword,
                   maxLength: Validators.maxPasswordLength,
                   decoration: InputDecoration(

@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import '../../core/services/password_breach_service.dart';
 
 /// Input validation utilities for the Safety App.
 /// Critical for ensuring SOS alerts reach valid phone numbers.
@@ -521,6 +522,39 @@ class Validators {
     }
 
     return null;
+  }
+
+  // ========================================
+  // PASSWORD BREACH DETECTION (HIBP)
+  // ========================================
+
+  /// Async validator for password breach check.
+  /// Returns error message if breached, null if safe or unable to check.
+  /// Note: Does NOT log passwords or hashes for security.
+  /// Fails open (returns null) on network errors - don't lock users out.
+  static Future<String?> validatePasswordNotBreached(
+    String password,
+    PasswordBreachService service,
+  ) async {
+    final result = await service.checkPassword(password);
+
+    if (result.isBreached) {
+      return 'This password was found in ${formatBreachCount(result.breachCount)} data breaches. '
+          'Please choose a different password for your safety.';
+    }
+
+    // On error/offline, don't block - fail open for safety app
+    return null;
+  }
+
+  /// Format breach count for display (e.g., 1.5M, 500K).
+  static String formatBreachCount(int count) {
+    if (count >= 1000000) {
+      return '${(count / 1000000).toStringAsFixed(1)}M';
+    } else if (count >= 1000) {
+      return '${(count / 1000).toStringAsFixed(1)}K';
+    }
+    return count.toString();
   }
 }
 
