@@ -34,6 +34,7 @@ class ContactsScreen extends ConsumerWidget {
               itemBuilder: (context, index) {
                 final contact = contacts[index];
                 return _ContactCard(
+                  key: ValueKey(contact.id), // Key for efficient list updates
                   contact: contact,
                   onToggleSos: () {
                     ref.read(contactsProvider.notifier).toggleSosContact(contact.id);
@@ -129,6 +130,7 @@ class _ContactCard extends StatelessWidget {
   final VoidCallback onDelete;
 
   const _ContactCard({
+    super.key,
     required this.contact,
     required this.onToggleSos,
     required this.onToggleLocation,

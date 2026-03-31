@@ -312,6 +312,37 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _importContacts(BuildContext context, WidgetRef ref) async {
+    // Show confirmation dialog first (security: prevent accidental imports)
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.cloud_download),
+            SizedBox(width: 8),
+            Text('Import Contacts'),
+          ],
+        ),
+        content: const Text(
+          'This will import contacts from a backup file. '
+          'Imported contacts will be added to your existing contacts.\n\n'
+          'Only import files from trusted sources.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Select File'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
     // Show loading
     showDialog(
       context: context,
@@ -504,8 +535,8 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(left: 4, bottom: 8),
       child: Text(
         title,
-        style: TextStyle(
-          color: AppTheme.textSecondary,
+        style: const TextStyle(
+          color: Color(0xFF6B7280), // AppTheme.textSecondary
           fontWeight: FontWeight.bold,
           fontSize: 12,
         ),

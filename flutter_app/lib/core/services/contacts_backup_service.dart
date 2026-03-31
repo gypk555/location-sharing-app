@@ -138,15 +138,29 @@ class ContactsBackupService {
       final file = File('${directory.path}/$fileName');
       await file.writeAsString(jsonString);
 
-      // Share the file
-      final result = await Share.shareXFiles(
-        [XFile(file.path)],
-        subject: 'Safety App Contacts Backup',
-        text: 'My emergency contacts backup from Safety App',
-      );
+      // Share the file with guaranteed cleanup via finally block
+      late ShareResult shareResult;
+      try {
+        shareResult = await Share.shareXFiles(
+          [XFile(file.path)],
+          subject: 'Safety App Contacts Backup',
+          text: 'My emergency contacts backup from Safety App',
+        );
+      } finally {
+        // CRITICAL: Clean up temp file in finally block
+        // This ensures deletion even if share is cancelled, fails, or app crashes
+        try {
+          if (await file.exists()) {
+            await file.delete();
+            AppLogger.debug('Temp export file cleaned up');
+          }
+        } catch (e) {
+          AppLogger.error('SECURITY: Could not delete temp file: ${file.path}', e);
+        }
+      }
 
-      if (result.status == ShareResultStatus.success ||
-          result.status == ShareResultStatus.dismissed) {
+      if (shareResult.status == ShareResultStatus.success ||
+          shareResult.status == ShareResultStatus.dismissed) {
         AppLogger.info('Contacts exported: ${contacts.length} contacts');
         return BackupResult.ok(
           filePath: file.path,

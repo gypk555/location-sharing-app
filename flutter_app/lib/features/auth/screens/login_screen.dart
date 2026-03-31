@@ -112,10 +112,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               const SizedBox(height: 48),
 
               // Logo and title
-              Icon(
+              const Icon(
                 Icons.shield,
                 size: 80,
-                color: AppTheme.primaryColor,
+                color: Color(0xFFE91E63), // AppTheme.primaryColor
               ),
               const SizedBox(height: 16),
               Text(

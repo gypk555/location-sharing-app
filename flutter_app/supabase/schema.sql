@@ -31,7 +31,7 @@ BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = '';
 
 -- =============================================
 -- PROFILES TABLE (extends auth.users)
@@ -65,7 +65,7 @@ BEGIN
     );
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Drop existing trigger if exists
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
@@ -114,7 +114,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = '';
 
 DROP TRIGGER IF EXISTS enforce_single_primary_contact ON public.emergency_contacts;
 CREATE TRIGGER enforce_single_primary_contact
@@ -167,7 +167,7 @@ BEGIN
 
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = '';
 
 DROP TRIGGER IF EXISTS enforce_sos_rate_limit ON public.sos_history;
 CREATE TRIGGER enforce_sos_rate_limit
@@ -430,7 +430,7 @@ BEGIN
     ORDER BY lh.created_at DESC
     LIMIT 1;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = '';
 
 -- Function to cleanup old location data (ADMIN ONLY)
 -- Note: This should be called via pg_cron or service role, not by users
@@ -449,7 +449,7 @@ BEGIN
     GET DIAGNOSTICS deleted_count = ROW_COUNT;
     RETURN deleted_count;
 END;
-$$ LANGUAGE plpgsql SECURITY INVOKER;
+$$ LANGUAGE plpgsql SECURITY INVOKER SET search_path = '';
 
 -- Function to expire old location shares (for scheduled job)
 CREATE OR REPLACE FUNCTION public.expire_location_shares()
@@ -466,7 +466,7 @@ BEGIN
     GET DIAGNOSTICS updated_count = ROW_COUNT;
     RETURN updated_count;
 END;
-$$ LANGUAGE plpgsql SECURITY INVOKER;
+$$ LANGUAGE plpgsql SECURITY INVOKER SET search_path = '';
 
 -- =============================================
 -- INDEXES FOR PERFORMANCE

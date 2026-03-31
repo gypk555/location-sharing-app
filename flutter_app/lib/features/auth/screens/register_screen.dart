@@ -97,10 +97,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 const SizedBox(height: 16),
 
                 // Header
-                Icon(
+                const Icon(
                   Icons.person_add,
                   size: 64,
-                  color: AppTheme.primaryColor,
+                  color: Color(0xFFE91E63), // AppTheme.primaryColor
                 ),
                 const SizedBox(height: 16),
                 Text(

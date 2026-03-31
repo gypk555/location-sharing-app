@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -113,9 +114,6 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   /// Timeout for sync operations (20 seconds - more forgiving for rural areas)
   static const _syncTimeout = Duration(seconds: 20);
 
-  /// Base delay between sync attempts (exponential backoff)
-  static const _baseSyncInterval = Duration(seconds: 2);
-
   /// Timeout for connectivity check
   static const _connectivityTimeout = Duration(seconds: 3);
 
@@ -135,6 +133,19 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   /// Debounce timer for toggle operations
   Timer? _debounceTimer;
+
+  /// Connectivity stream subscription (listen instead of poll)
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+
+  /// Cached connectivity status
+  bool _isConnected = true;
+
+  /// Track if notifier has been disposed (prevents callbacks after disposal)
+  bool _disposed = false;
+
+  /// Rate limiting for import operations
+  DateTime? _lastImportAttempt;
+  static const _importCooldown = Duration(seconds: 10);
 
   SupabaseClient? get _supabase {
     try {
@@ -182,21 +193,64 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   ContactsNotifier() : super(const ContactsState(isLoading: true)) {
     // Schedule load for next microtask to avoid blocking constructor
     Future.microtask(() => _loadContacts());
+    // Initialize connectivity listener (more efficient than polling)
+    _initConnectivityListener();
+  }
+
+  /// Initialize connectivity stream listener
+  void _initConnectivityListener() {
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
+      (results) {
+        // Don't process if disposed (prevents callbacks after disposal)
+        if (_disposed) return;
+
+        final wasConnected = _isConnected;
+        _isConnected = !results.contains(ConnectivityResult.none);
+
+        // Auto-sync when coming back online
+        if (!wasConnected && _isConnected) {
+          AppLogger.info('Back online - triggering sync');
+          _consecutiveFailures = 0; // Reset backoff
+
+          // Check if sync is already in progress (prevents race condition)
+          if (!state.isSyncing) {
+            syncToSupabase();
+          } else {
+            AppLogger.info('Sync already in progress, skipping auto-sync');
+          }
+        }
+      },
+      onError: (e) {
+        AppLogger.warning('Connectivity listener error: $e');
+      },
+      cancelOnError: false, // Continue listening even after errors
+    );
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _debounceTimer?.cancel();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
-  /// Check if device is online (with timeout to prevent hanging)
+  /// Check if device is online
+  /// Uses cached connectivity status from stream listener (more efficient)
+  /// Falls back to direct check if needed
   Future<bool> _isOnline() async {
+    // Use cached status if connectivity listener is active
+    if (_connectivitySubscription != null) {
+      return _isConnected;
+    }
+
+    // Fallback to direct check with timeout
     try {
       final connectivityResult = await Connectivity()
           .checkConnectivity()
           .timeout(_connectivityTimeout);
-      return !connectivityResult.contains(ConnectivityResult.none);
+      _isConnected = !connectivityResult.contains(ConnectivityResult.none);
+      return _isConnected;
     } on TimeoutException catch (_) {
       AppLogger.warning('Connectivity check timed out');
       return true; // Assume online if check times out
@@ -206,13 +260,23 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
     }
   }
 
-  /// Calculate backoff duration based on consecutive failures (exponential backoff)
+  /// Secure random generator for jitter (security: prevents predictable timing)
+  final _random = Random.secure();
+
+  /// Calculate backoff duration based on consecutive failures (exponential backoff with jitter)
+  /// Jitter prevents thundering herd problem when multiple devices retry simultaneously
   Duration _getBackoffDuration() {
-    if (_consecutiveFailures == 0) return _baseSyncInterval;
-    if (_consecutiveFailures == 1) return const Duration(seconds: 4);
-    if (_consecutiveFailures == 2) return const Duration(seconds: 8);
-    if (_consecutiveFailures >= 3) return const Duration(seconds: 16);
-    return const Duration(seconds: 30); // Max backoff
+    final baseSeconds = switch (_consecutiveFailures) {
+      0 => 2,
+      1 => 4,
+      2 => 8,
+      _ => 16, // Max backoff for 3+ failures
+    };
+
+    // Add jitter: random value between 0-25% of base duration
+    // Minimum jitter of 1ms to prevent nextInt(0) edge case
+    final jitterMs = _random.nextInt((baseSeconds * 250).clamp(1, 5000));
+    return Duration(seconds: baseSeconds, milliseconds: jitterMs);
   }
 
   /// Check if enough time has passed since last sync attempt (with exponential backoff)
@@ -594,16 +658,26 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   }
 
   Future<void> _updateLocalContact(ContactModel contact) async {
-    final index = state.contacts.indexWhere((c) => c.id == contact.id);
+    final stateIndex = state.contacts.indexWhere((c) => c.id == contact.id);
 
-    if (index != -1) {
+    if (stateIndex != -1) {
       // Use mutex to protect Hive operation
       await _withHiveLock(() async {
         final box = await _box;
-        await box.putAt(index, contact);
+        // Recalculate index inside mutex to prevent race condition
+        // Box contents may have changed between finding stateIndex and acquiring lock
+        final boxIndex = box.values.toList().indexWhere((c) => c.id == contact.id);
+
+        if (boxIndex >= 0 && boxIndex < box.length) {
+          await box.putAt(boxIndex, contact);
+        } else {
+          // Contact not found in box - add as new entry
+          AppLogger.warning('Contact not found in box during update, adding as new');
+          await box.add(contact);
+        }
       });
       final updatedContacts = [...state.contacts];
-      updatedContacts[index] = contact;
+      updatedContacts[stateIndex] = contact;
       state = state.copyWith(contacts: updatedContacts);
     }
   }
@@ -676,13 +750,22 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   Future<void> deleteContact(String id) async {
     try {
-      // Delete from local storage using cached box with mutex
-      final index = state.contacts.indexWhere((c) => c.id == id);
+      // Check if contact exists in state
+      final stateIndex = state.contacts.indexWhere((c) => c.id == id);
 
-      if (index != -1) {
+      if (stateIndex != -1) {
+        // Delete from local storage using cached box with mutex
         await _withHiveLock(() async {
           final box = await _box;
-          await box.deleteAt(index);
+          // Recalculate index inside mutex to prevent race condition
+          // Box contents may have changed between finding stateIndex and acquiring lock
+          final boxIndex = box.values.toList().indexWhere((c) => c.id == id);
+
+          if (boxIndex >= 0 && boxIndex < box.length) {
+            await box.deleteAt(boxIndex);
+          } else {
+            AppLogger.warning('Contact not found in box during delete: $id');
+          }
         });
 
         final updatedContacts =
@@ -757,6 +840,12 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
     }
   }
 
+  /// Debounce duration for toggle operations (prevents rapid sync calls)
+  static const _toggleDebounce = Duration(milliseconds: 500);
+
+  /// Pending toggle operations (debounced)
+  final Map<String, ContactModel> _pendingToggles = {};
+
   Future<void> toggleSosContact(String id) async {
     final contact = _findContactById(id);
     if (contact == null) {
@@ -764,7 +853,7 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
       return;
     }
     final updated = contact.copyWith(isSosContact: !contact.isSosContact);
-    await updateContact(updated);
+    await _debouncedUpdate(updated);
   }
 
   Future<void> toggleLocationSharing(String id) async {
@@ -775,7 +864,41 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
     }
     final updated =
         contact.copyWith(isLocationSharing: !contact.isLocationSharing);
-    await updateContact(updated);
+    await _debouncedUpdate(updated);
+  }
+
+  /// Debounced update to prevent rapid sync calls on toggle operations
+  Future<void> _debouncedUpdate(ContactModel contact) async {
+    // Update local state immediately for responsive UI
+    await _updateLocalContact(contact.copyWith(isSynced: false));
+
+    // Queue for debounced sync
+    _pendingToggles[contact.id] = contact;
+
+    // Cancel existing timer and start new one
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(_toggleDebounce, () async {
+      // Don't process if disposed (prevents callbacks after disposal)
+      if (_disposed) return;
+
+      // Sync all pending toggles
+      final toSync = Map<String, ContactModel>.from(_pendingToggles);
+      _pendingToggles.clear();
+
+      for (final entry in toSync.entries) {
+        // Check disposed again before each sync (long-running operation)
+        if (_disposed) return;
+
+        // Verify contact still exists before syncing (may have been deleted)
+        final currentContact = _findContactById(entry.key);
+        if (currentContact == null) {
+          AppLogger.warning('Contact ${entry.key} no longer exists, skipping sync');
+          continue;
+        }
+
+        await _syncContactToSupabase(currentContact, isNew: false);
+      }
+    });
   }
 
   Future<void> setPrimaryContact(String id) async {
@@ -807,16 +930,27 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   }
 
   /// Force refresh from Supabase
+  /// Note: syncToSupabase handles pushing local changes, _syncFromSupabase pulls remote changes
+  /// These are complementary operations, not duplicates
   Future<void> refresh() async {
+    // Check connectivity first to avoid wasted operations
+    final online = await _isOnline();
+    if (!online) {
+      AppLogger.info('Offline - refresh skipped');
+      return;
+    }
+
     state = state.copyWith(isLoading: true);
 
-    // Sync any local changes (including pending deletes) to Supabase
-    await syncToSupabase();
+    try {
+      // Push local changes first (including pending deletes)
+      await syncToSupabase();
 
-    // Then pull latest from Supabase
-    await _syncFromSupabase();
-
-    state = state.copyWith(isLoading: false);
+      // Then pull latest from Supabase (merges remote changes)
+      await _syncFromSupabase();
+    } finally {
+      state = state.copyWith(isLoading: false);
+    }
   }
 
   void clearError() {
@@ -846,7 +980,23 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   /// Import contacts from a file
   /// Uses mutex to prevent race conditions during batch import
+  /// Rate limited to prevent DoS attacks
   Future<ImportResult> importContactsFromFile() async {
+    // Rate limiting check (security: prevent DoS via repeated imports)
+    if (_lastImportAttempt != null) {
+      final timeSinceLastImport = DateTime.now().difference(_lastImportAttempt!);
+      if (timeSinceLastImport < _importCooldown) {
+        final waitSeconds = (_importCooldown - timeSinceLastImport).inSeconds;
+        return ImportResult.fromError(
+          BackupError.importFailed(
+            details: 'Please wait $waitSeconds seconds before importing again.',
+          ),
+        );
+      }
+    }
+
+    _lastImportAttempt = DateTime.now();
+
     final result = await ContactsBackupService.instance.importFromFile();
 
     if (result.success && result.contacts.isNotEmpty) {

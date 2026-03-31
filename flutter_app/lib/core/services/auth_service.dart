@@ -5,6 +5,7 @@ import '../models/user_model.dart';
 import '../models/contact_model.dart';
 import '../models/location_model.dart';
 import '../../shared/constants/app_constants.dart';
+import '../../shared/errors/app_errors.dart';
 import '../../shared/utils/logger.dart';
 import '../../shared/utils/validators.dart';
 
@@ -15,6 +16,12 @@ class AuthService {
 
   final _uuid = const Uuid();
   UserModel? _currentUser;
+
+  /// Demo mode OTP attempt tracking (security: prevent brute force)
+  final Map<String, int> _demoOtpAttempts = {};
+  final Map<String, DateTime> _demoOtpLockouts = {};
+  static const _maxDemoOtpAttempts = 5;
+  static const _demoLockoutDuration = Duration(minutes: 5);
 
   /// Cached Hive box for performance
   Box<UserModel>? _userBox;
@@ -71,7 +78,10 @@ class AuthService {
 
     // Validate E.164 format
     if (!Validators.isValidE164(normalizedPhone)) {
-      throw Exception('Invalid phone format. Use +91XXXXXXXXXX');
+      throw ValidationError.invalidFormat(
+        fieldName: 'phone number',
+        expected: '+91XXXXXXXXXX',
+      );
     }
 
     if (_supabase != null) {
@@ -86,7 +96,10 @@ class AuthService {
 
     // Validate E.164 format
     if (!Validators.isValidE164(normalizedPhone)) {
-      throw Exception('Invalid phone format. Use +91XXXXXXXXXX');
+      throw ValidationError.invalidFormat(
+        fieldName: 'phone number',
+        expected: '+91XXXXXXXXXX',
+      );
     }
 
     UserModel user;
@@ -105,10 +118,50 @@ class AuthService {
         createdAt: DateTime.now(),
       );
     } else {
-      // Demo mode
-      if (otp.length != 6) {
-        throw Exception('Invalid OTP');
+      // Demo mode with attempt limiting (security: prevent brute force)
+
+      // Check if locked out (use generic message to prevent user enumeration)
+      final lockoutTime = _demoOtpLockouts[normalizedPhone];
+      if (lockoutTime != null) {
+        if (DateTime.now().isBefore(lockoutTime)) {
+          // Generic message prevents attackers from knowing if phone was used
+          throw ValidationError.invalidFormat(
+            fieldName: 'OTP',
+            expected: 'Invalid OTP. Please try again later.',
+          );
+        } else {
+          // Lockout expired, clear it
+          _demoOtpLockouts.remove(normalizedPhone);
+          _demoOtpAttempts.remove(normalizedPhone);
+        }
       }
+
+      // Validate OTP format (must be exactly 6 digits)
+      if (otp.length != 6 || !RegExp(r'^\d{6}$').hasMatch(otp)) {
+        // Track failed attempt
+        _demoOtpAttempts[normalizedPhone] =
+            (_demoOtpAttempts[normalizedPhone] ?? 0) + 1;
+
+        if (_demoOtpAttempts[normalizedPhone]! >= _maxDemoOtpAttempts) {
+          _demoOtpLockouts[normalizedPhone] =
+              DateTime.now().add(_demoLockoutDuration);
+          _demoOtpAttempts.remove(normalizedPhone);
+
+          throw ValidationError.invalidFormat(
+            fieldName: 'OTP',
+            expected: 'Too many failed attempts. Locked for 5 minutes.',
+          );
+        }
+
+        throw ValidationError.invalidFormat(
+          fieldName: 'OTP',
+          expected: '6 digits',
+        );
+      }
+
+      // Success - clear attempts
+      _demoOtpAttempts.remove(normalizedPhone);
+
       user = UserModel(
         id: 'demo-phone-${_uuid.v4()}',
         phone: normalizedPhone,
@@ -297,7 +350,10 @@ class AuthService {
     final normalizedPhone = Validators.normalizePhone(phone);
 
     if (!Validators.isValidE164(normalizedPhone)) {
-      throw Exception('Invalid phone format. Use +91XXXXXXXXXX');
+      throw ValidationError.invalidFormat(
+        fieldName: 'phone number',
+        expected: '+91XXXXXXXXXX',
+      );
     }
 
     // Update in Supabase if available
