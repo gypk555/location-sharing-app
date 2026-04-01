@@ -6,11 +6,28 @@ import '../../../core/providers/contacts_provider.dart';
 import '../../../core/models/contact_model.dart';
 import '../../../shared/theme/app_theme.dart';
 
-class ContactsScreen extends ConsumerWidget {
+class ContactsScreen extends ConsumerStatefulWidget {
   const ContactsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ContactsScreen> createState() => _ContactsScreenState();
+}
+
+class _ContactsScreenState extends ConsumerState<ContactsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Trigger sync once when screen loads (proper lifecycle, not in build)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Check mounted to prevent operations on disposed widget
+      if (mounted) {
+        ref.read(contactsProvider.notifier).ensureSyncedForCurrentUser();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final contactsState = ref.watch(contactsProvider);
     final contacts = contactsState.contacts;
 
@@ -34,7 +51,7 @@ class ContactsScreen extends ConsumerWidget {
               itemBuilder: (context, index) {
                 final contact = contacts[index];
                 return _ContactCard(
-                  key: ValueKey(contact.id), // Key for efficient list updates
+                  key: ValueKey(contact.id),
                   contact: contact,
                   onToggleSos: () {
                     ref.read(contactsProvider.notifier).toggleSosContact(contact.id);
@@ -42,8 +59,11 @@ class ContactsScreen extends ConsumerWidget {
                   onToggleLocation: () {
                     ref.read(contactsProvider.notifier).toggleLocationSharing(contact.id);
                   },
+                  onEdit: () {
+                    context.push('/add-contact', extra: contact);
+                  },
                   onDelete: () {
-                    _showDeleteDialog(context, ref, contact);
+                    _showDeleteDialog(contact);
                   },
                 );
               },
@@ -56,21 +76,21 @@ class ContactsScreen extends ConsumerWidget {
     );
   }
 
-  void _showDeleteDialog(BuildContext context, WidgetRef ref, ContactModel contact) {
+  void _showDeleteDialog(ContactModel contact) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Contact'),
         content: Text('Remove ${contact.name} from emergency contacts?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () {
               ref.read(contactsProvider.notifier).removeContact(contact.id);
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
             },
             style: TextButton.styleFrom(foregroundColor: AppTheme.errorColor),
             child: const Text('Delete'),
@@ -127,6 +147,7 @@ class _ContactCard extends StatelessWidget {
   final ContactModel contact;
   final VoidCallback onToggleSos;
   final VoidCallback onToggleLocation;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const _ContactCard({
@@ -134,6 +155,7 @@ class _ContactCard extends StatelessWidget {
     required this.contact,
     required this.onToggleSos,
     required this.onToggleLocation,
+    required this.onEdit,
     required this.onDelete,
   });
 
@@ -222,6 +244,11 @@ class _ContactCard extends StatelessWidget {
                         ),
                     ],
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined),
+                  color: AppTheme.primaryColor,
+                  onPressed: onEdit,
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline),

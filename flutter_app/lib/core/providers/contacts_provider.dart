@@ -143,6 +143,9 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   /// Track if notifier has been disposed (prevents callbacks after disposal)
   bool _disposed = false;
 
+  /// Track the user ID that was last synced (ensures sync happens for each user)
+  String? _lastSyncedUserId;
+
   /// Rate limiting for import operations
   DateTime? _lastImportAttempt;
   static const _importCooldown = Duration(seconds: 10);
@@ -321,6 +324,23 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
         error: appError.userMessage,
       );
     }
+  }
+
+  /// Called when contacts screen is opened to ensure data is synced.
+  /// Uses lazy-loading pattern: only syncs if not already done for this user.
+  Future<void> ensureSyncedForCurrentUser() async {
+    // Skip if user not logged in
+    if (_currentUserId == null) return;
+
+    // Skip if already syncing
+    if (state.isSyncing) return;
+
+    // Skip if already synced for this user (handles user switching)
+    if (_lastSyncedUserId == _currentUserId) return;
+
+    // Trigger background sync and track user ID
+    _lastSyncedUserId = _currentUserId;
+    await _backgroundSync(state.contacts);
   }
 
   /// Background sync operation - doesn't block UI
@@ -713,6 +733,21 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   Future<void> updateContact(ContactModel contact) async {
     try {
+      // Security validation - check for SQL injection / XSS (same as addContact)
+      final nameSecurityError = Validators.validateSecureInput(contact.name, fieldName: 'Name');
+      if (nameSecurityError != null) {
+        state = state.copyWith(error: nameSecurityError);
+        return;
+      }
+
+      // Validate and sanitize name
+      final sanitizedName = Validators.sanitizeName(contact.name);
+      final nameError = Validators.validateName(sanitizedName);
+      if (nameError != null) {
+        state = state.copyWith(error: nameError);
+        return;
+      }
+
       // Validate phone if changed
       final normalizedPhone = Validators.normalizePhone(contact.phone);
       if (!Validators.isValidE164(normalizedPhone)) {
@@ -724,15 +759,32 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
         return;
       }
 
-      final contactWithPhone = contact.copyWith(
+      // Validate email if provided
+      if (contact.email != null && contact.email!.isNotEmpty) {
+        final emailError = Validators.validateEmail(contact.email);
+        if (emailError != null) {
+          state = state.copyWith(error: emailError);
+          return;
+        }
+      }
+
+      // Sanitize relationship field if provided
+      final sanitizedRelationship = contact.relationship != null
+          ? Validators.sanitizeForDatabase(contact.relationship!)
+          : null;
+
+      final contactWithSanitizedData = contact.copyWith(
+        name: sanitizedName,
         phone: normalizedPhone,
+        email: contact.email?.trim().toLowerCase(),
+        relationship: sanitizedRelationship,
         isSynced: false, // Mark for re-sync
       );
 
-      await _updateLocalContact(contactWithPhone);
+      await _updateLocalContact(contactWithSanitizedData);
 
       // Sync to Supabase (existing contact, not new)
-      await _syncContactToSupabase(contactWithPhone, isNew: false);
+      await _syncContactToSupabase(contactWithSanitizedData, isNew: false);
     } on HiveError catch (e, stackTrace) {
       AppLogger.error('Hive error updating contact', e);
       final appError = StorageError.writeFailed(
@@ -967,6 +1019,7 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
       });
 
       state = const ContactsState();
+      _lastSyncedUserId = null; // Reset so next user login triggers sync
       AppLogger.info('All contacts cleared');
     } catch (e) {
       AppLogger.error('Error clearing contacts', e);

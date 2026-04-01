@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/models/contact_model.dart';
 import '../core/providers/auth_provider.dart';
 import '../features/auth/screens/otp_screen.dart';
 import '../features/auth/screens/unified_auth_screen.dart';
@@ -85,7 +86,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Additional routes
       GoRoute(
         path: '/add-contact',
-        builder: (context, state) => const AddContactScreen(),
+        builder: (context, state) {
+          // Safe type check to prevent runtime crash if wrong type is passed
+          final contact = state.extra is ContactModel ? state.extra as ContactModel : null;
+          return AddContactScreen(contact: contact);
+        },
       ),
       GoRoute(
         path: '/fake-call',

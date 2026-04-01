@@ -9,7 +9,11 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/utils/validators.dart';
 
 class AddContactScreen extends ConsumerStatefulWidget {
-  const AddContactScreen({super.key});
+  final ContactModel? contact;
+
+  const AddContactScreen({super.key, this.contact});
+
+  bool get isEditing => contact != null;
 
   @override
   ConsumerState<AddContactScreen> createState() => _AddContactScreenState();
@@ -24,6 +28,22 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
   String _relationship = 'family';
   bool _isSosContact = true;
   bool _isLocationSharing = false;
+  bool _isSaving = false; // Prevent duplicate submissions
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill fields if editing
+    if (widget.contact != null) {
+      final c = widget.contact!;
+      _nameController.text = c.name;
+      _phoneController.text = c.phone;
+      _emailController.text = c.email ?? '';
+      _relationship = c.relationship ?? 'family';
+      _isSosContact = c.isSosContact;
+      _isLocationSharing = c.isLocationSharing;
+    }
+  }
 
   @override
   void dispose() {
@@ -35,30 +55,68 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
 
   Future<void> _saveContact() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_isSaving) return; // Prevent duplicate submissions
 
-    // Normalize the phone number
-    final normalizedPhone = Validators.normalizePhone(_phoneController.text);
+    setState(() => _isSaving = true);
 
-    final contact = ContactModel(
-      id: const Uuid().v4(),
-      name: Validators.sanitizeName(_nameController.text),
-      phone: normalizedPhone,
-      email: _emailController.text.trim().isEmpty
-          ? null
-          : _emailController.text.trim().toLowerCase(),
-      relationship: _relationship,
-      isSosContact: _isSosContact,
-      isLocationSharing: _isLocationSharing,
-      addedAt: DateTime.now(),
-    );
+    try {
+      final normalizedPhone = Validators.normalizePhone(_phoneController.text);
+      final isEditing = widget.isEditing;
 
-    await ref.read(contactsProvider.notifier).addContact(contact);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${contact.name} added successfully')),
+      final contact = ContactModel(
+        id: isEditing ? widget.contact!.id : const Uuid().v4(),
+        name: Validators.sanitizeName(_nameController.text),
+        phone: normalizedPhone,
+        email: _emailController.text.trim().isEmpty
+            ? null
+            : _emailController.text.trim().toLowerCase(),
+        relationship: _relationship,
+        isSosContact: _isSosContact,
+        isLocationSharing: _isLocationSharing,
+        addedAt: isEditing ? widget.contact!.addedAt : DateTime.now(),
+        userId: isEditing ? widget.contact!.userId : null,
+        isPrimary: isEditing ? widget.contact!.isPrimary : false, // Preserve isPrimary status
+        isSynced: false, // Mark as unsynced to trigger sync
       );
-      context.pop();
+
+      if (isEditing) {
+        await ref.read(contactsProvider.notifier).updateContact(contact);
+      } else {
+        await ref.read(contactsProvider.notifier).addContact(contact);
+      }
+
+      if (mounted) {
+        // Check if operation failed by reading provider error state
+        final error = ref.read(contactsProvider).error;
+        if (error != null) {
+          // Show error and stay on screen so user can fix the issue
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error),
+              backgroundColor: Colors.red,
+            ),
+          );
+          // Clear the error so it doesn't persist
+          ref.read(contactsProvider.notifier).clearError();
+          return; // Don't pop - let user fix the issue
+        }
+
+        // Success - show confirmation and close screen
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isEditing
+                  ? '${contact.name} updated successfully'
+                  : '${contact.name} added successfully',
+            ),
+          ),
+        );
+        context.pop();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
@@ -66,18 +124,27 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Contact'),
+        title: Text(widget.isEditing ? 'Edit Contact' : 'Add Contact'),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => context.pop(),
         ),
         actions: [
           TextButton(
-            onPressed: _saveContact,
-            child: const Text(
-              'Save',
-              style: TextStyle(color: Colors.white),
-            ),
+            onPressed: _isSaving ? null : _saveContact,
+            child: _isSaving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text(
+                    'Save',
+                    style: TextStyle(color: Colors.white),
+                  ),
           ),
         ],
       ),
@@ -245,8 +312,14 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
               const SizedBox(height: 32),
 
               ElevatedButton(
-                onPressed: _saveContact,
-                child: const Text('Save Contact'),
+                onPressed: _isSaving ? null : _saveContact,
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(widget.isEditing ? 'Update Contact' : 'Save Contact'),
               ),
             ],
           ),
