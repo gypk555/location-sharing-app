@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import '../../../core/models/contact_model.dart';
+import '../../../core/models/location_model.dart';
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/providers/contacts_provider.dart';
 import '../../../core/providers/location_provider.dart';
 import '../../../core/providers/password_breach_provider.dart';
 import '../../../core/providers/sos_provider.dart';
+import '../../../core/services/sms_service.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/utils/logger.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -21,7 +27,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     // Check for breach warning after frame is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showBreachWarningIfNeeded();
+      if (mounted) {
+        _showBreachWarningIfNeeded();
+        // Ensure contacts are loaded
+        ref.read(contactsProvider.notifier).ensureSyncedForCurrentUser();
+      }
     });
   }
 
@@ -68,6 +78,290 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
     );
+  }
+
+  /// Share current location with contacts that have location sharing enabled
+  Future<void> _shareLocation() async {
+    final locationState = ref.read(locationProvider);
+
+    // Ensure contacts are loaded before proceeding
+    await ref.read(contactsProvider.notifier).ensureSyncedForCurrentUser();
+
+    // Re-read contacts state after ensuring they're loaded
+    final contactsState = ref.read(contactsProvider);
+
+    // Debug: Log contact states
+    AppLogger.debug('Total contacts: ${contactsState.contacts.length}');
+    for (final contact in contactsState.contacts) {
+      AppLogger.debug('Contact ${contact.name} - isLocationSharing: ${contact.isLocationSharing}');
+    }
+    AppLogger.debug('Location sharing contacts: ${contactsState.locationSharingContacts.length}');
+
+    // Check if location tracking is enabled
+    if (!locationState.isTracking) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enable location tracking first'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Check if current location is available
+    if (locationState.currentLocation == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Getting current location...'),
+        ),
+      );
+      return;
+    }
+
+    // Get contacts with location sharing enabled
+    final sharingContacts = contactsState.locationSharingContacts;
+    if (sharingContacts.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No contacts enabled for location sharing'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Show custom app selection dialog with icons
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Open with'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: GridView.count(
+            crossAxisCount: 4,
+            shrinkWrap: true,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            children: [
+              _AppIcon(
+                label: 'WhatsApp',
+                icon: FontAwesomeIcons.whatsapp,
+                color: const Color(0xFF25D366),
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  _shareViaWhatsApp(sharingContacts, locationState.currentLocation!);
+                },
+              ),
+              _AppIcon(
+                label: 'Messages',
+                icon: FontAwesomeIcons.comment,
+                color: const Color(0xFF0084FF),
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  _shareViaSms(sharingContacts, locationState.currentLocation!);
+                },
+              ),
+              _AppIcon(
+                label: 'Telegram',
+                icon: FontAwesomeIcons.telegram,
+                color: const Color(0xFF0088cc),
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  _shareViaTelegram(sharingContacts, locationState.currentLocation!);
+                },
+              ),
+              _AppIcon(
+                label: 'More',
+                icon: FontAwesomeIcons.share,
+                color: Colors.grey,
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  _shareViaMoreApps(sharingContacts, locationState.currentLocation!);
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Share location via SMS (pre-fills all phone numbers)
+  Future<void> _shareViaSms(
+    List<ContactModel> contacts,
+    LocationModel location,
+  ) async {
+    try {
+      final smsService = SmsService();
+      final success = await smsService.shareLocationViaSms(
+        contacts: contacts,
+        location: location,
+      );
+
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location shared successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to share via SMS'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      AppLogger.error('Error sharing via SMS', e);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error sharing location'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Share location via WhatsApp (one contact at a time for multiple)
+  Future<void> _shareViaWhatsApp(
+    List<ContactModel> contacts,
+    LocationModel location,
+  ) async {
+    try {
+      final smsService = SmsService();
+      final sentCount = await smsService.shareLocationViaWhatsApp(
+        contacts: contacts,
+        location: location,
+      );
+
+      if (mounted) {
+        if (sentCount > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Location shared successfully with $sentCount contact(s)'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sharing cancelled'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      AppLogger.error('Error sharing via WhatsApp', e);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error sharing location'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Share location via Telegram (one contact at a time for multiple)
+  Future<void> _shareViaTelegram(
+    List<ContactModel> contacts,
+    LocationModel location,
+  ) async {
+    try {
+      final smsService = SmsService();
+      final sentCount = await smsService.shareLocationViaTelegram(
+        contacts: contacts,
+        location: location,
+      );
+
+      if (mounted) {
+        if (sentCount > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Location shared successfully with $sentCount contact(s)'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sharing cancelled'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      AppLogger.error('Error sharing via Telegram', e);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error sharing location'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Share location via other apps using native chooser
+  Future<void> _shareViaMoreApps(
+    List<ContactModel> contacts,
+    LocationModel location,
+  ) async {
+    try {
+      final smsService = SmsService();
+      final wasShared = await smsService.shareLocationWithMoreApps(
+        contacts: contacts,
+        location: location,
+      );
+
+      if (mounted) {
+        if (wasShared) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location shared successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sharing cancelled'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      AppLogger.error('Error sharing via more apps', e);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error sharing location'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -224,9 +518,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   title: 'Share Location',
                   subtitle: 'Send to contacts',
                   color: Colors.green,
-                  onTap: () {
-                    // Share location
-                  },
+                  onTap: _shareLocation,
                 ),
                 _QuickActionCard(
                   icon: Icons.people,
@@ -336,6 +628,51 @@ class _QuickActionCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AppIcon extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _AppIcon({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 32,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12),
+          ),
+        ],
       ),
     );
   }

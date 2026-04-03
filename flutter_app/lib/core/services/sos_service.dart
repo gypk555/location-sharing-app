@@ -148,13 +148,14 @@ class SosService {
         return;
       }
 
-      // Send SOS SMS
-      await _smsService.sendSosAlert(
+      // Send SOS SMS (one to each contact)
+      final sentCount = await _smsService.sendSosAlert(
         contacts: contacts,
         location: location,
       );
 
-      _updateStatus(SosStatus.sent);
+      // Mark as sent if at least one was successful
+      _updateStatus(sentCount > 0 ? SosStatus.sent : SosStatus.failed);
 
       // Reset to idle after 3 seconds
       Future.delayed(const Duration(seconds: 3), () {
