@@ -9,6 +9,7 @@ import 'app/app.dart';
 import 'core/models/user_model.dart';
 import 'core/models/contact_model.dart';
 import 'core/models/location_model.dart';
+import 'shared/utils/logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,14 +20,35 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Load environment variables
-  await dotenv.load(fileName: '.env');
+  // Load environment variables (gracefully handle missing file)
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (e) {
+    AppLogger.warning('Could not load .env file - using defaults');
+  }
 
-  // Initialize Supabase
-  await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL']!,
-    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
-  );
+  // Initialize Supabase with graceful fallback
+  final supabaseUrl = dotenv.env['SUPABASE_URL'];
+  final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
+
+  if (supabaseUrl != null &&
+      supabaseUrl.isNotEmpty &&
+      supabaseAnonKey != null &&
+      supabaseAnonKey.isNotEmpty) {
+    try {
+      await Supabase.initialize(
+        url: supabaseUrl,
+        anonKey: supabaseAnonKey,
+      );
+      AppLogger.info('Supabase initialized successfully');
+    } catch (e) {
+      AppLogger.error('Failed to initialize Supabase', e);
+      // Continue without Supabase - app can still work in offline/demo mode
+    }
+  } else {
+    AppLogger.warning(
+        'Supabase credentials not configured - running in offline/demo mode');
+  }
 
   // Initialize Hive for local storage
   await Hive.initFlutter();

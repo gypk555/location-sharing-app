@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +23,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  // Singleton SMS service instance - cached at class level for reuse
+  final _smsService = SmsService();
+
   @override
   void initState() {
     super.initState();
@@ -83,21 +87,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// Share current location with contacts that have location sharing enabled
   Future<void> _shareLocation() async {
     final locationState = ref.read(locationProvider);
-
-    // Ensure contacts are loaded before proceeding
-    await ref.read(contactsProvider.notifier).ensureSyncedForCurrentUser();
-
-    // Re-read contacts state after ensuring they're loaded
     final contactsState = ref.read(contactsProvider);
 
-    // Debug: Log contact states
-    AppLogger.debug('Total contacts: ${contactsState.contacts.length}');
-    for (final contact in contactsState.contacts) {
-      AppLogger.debug('Contact ${contact.name} - isLocationSharing: ${contact.isLocationSharing}');
+    // Check if already syncing - don't block UI waiting for sync
+    if (contactsState.isSyncing) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Loading contacts... please wait'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
     }
-    AppLogger.debug('Location sharing contacts: ${contactsState.locationSharingContacts.length}');
 
-    // Check if location tracking is enabled
+    // Use existing contacts if available (offline-first pattern)
+    // Trigger background sync if contacts list is empty (non-blocking)
+    if (contactsState.contacts.isEmpty) {
+      unawaited(ref.read(contactsProvider.notifier).ensureSyncedForCurrentUser());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Loading contacts in background...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // Validate location tracking and current location
     if (!locationState.isTracking) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -109,7 +127,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
 
-    // Check if current location is available
     if (locationState.currentLocation == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -133,65 +150,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
 
-    // Show custom app selection dialog with icons
+    // Show app chooser dialog
     if (!mounted) return;
+    final location = locationState.currentLocation!;
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Open with'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: GridView.count(
-            crossAxisCount: 4,
-            shrinkWrap: true,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            children: [
-              _AppIcon(
-                label: 'WhatsApp',
-                icon: FontAwesomeIcons.whatsapp,
-                color: const Color(0xFF25D366),
-                onTap: () {
-                  Navigator.pop(dialogContext);
-                  _shareViaWhatsApp(sharingContacts, locationState.currentLocation!);
-                },
-              ),
-              _AppIcon(
-                label: 'Messages',
-                icon: FontAwesomeIcons.comment,
-                color: const Color(0xFF0084FF),
-                onTap: () {
-                  Navigator.pop(dialogContext);
-                  _shareViaSms(sharingContacts, locationState.currentLocation!);
-                },
-              ),
-              _AppIcon(
-                label: 'Telegram',
-                icon: FontAwesomeIcons.telegram,
-                color: const Color(0xFF0088cc),
-                onTap: () {
-                  Navigator.pop(dialogContext);
-                  _shareViaTelegram(sharingContacts, locationState.currentLocation!);
-                },
-              ),
-              _AppIcon(
-                label: 'More',
-                icon: FontAwesomeIcons.share,
-                color: Colors.grey,
-                onTap: () {
-                  Navigator.pop(dialogContext);
-                  _shareViaMoreApps(sharingContacts, locationState.currentLocation!);
-                },
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-        ],
+      builder: (dialogContext) => _AppChooserDialog(
+        onWhatsApp: () {
+          Navigator.pop(dialogContext);
+          // Check mounted before calling async operation
+          if (mounted) {
+            _shareViaWhatsApp(sharingContacts, location);
+          }
+        },
+        onSms: () {
+          Navigator.pop(dialogContext);
+          // Check mounted before calling async operation
+          if (mounted) {
+            _shareViaSms(sharingContacts, location);
+          }
+        },
+        onTelegram: () {
+          Navigator.pop(dialogContext);
+          // Check mounted before calling async operation
+          if (mounted) {
+            _shareViaTelegram(sharingContacts, location);
+          }
+        },
+        onMore: () {
+          Navigator.pop(dialogContext);
+          // Check mounted before calling async operation
+          if (mounted) {
+            _shareViaMoreApps(location);
+          }
+        },
       ),
     );
   }
@@ -202,8 +194,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     LocationModel location,
   ) async {
     try {
-      final smsService = SmsService();
-      final success = await smsService.shareLocationViaSms(
+      final success = await _smsService.shareLocationViaSms(
         contacts: contacts,
         location: location,
       );
@@ -244,8 +235,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     LocationModel location,
   ) async {
     try {
-      final smsService = SmsService();
-      final sentCount = await smsService.shareLocationViaWhatsApp(
+      final sentCount = await _smsService.shareLocationViaWhatsApp(
         contacts: contacts,
         location: location,
       );
@@ -253,8 +243,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (mounted) {
         if (sentCount > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Location shared successfully with $sentCount contact(s)'),
+            const SnackBar(
+              content: Text('WhatsApp opened - select contacts to share location'),
               backgroundColor: Colors.green,
             ),
           );
@@ -286,8 +276,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     LocationModel location,
   ) async {
     try {
-      final smsService = SmsService();
-      final sentCount = await smsService.shareLocationViaTelegram(
+      final sentCount = await _smsService.shareLocationViaTelegram(
         contacts: contacts,
         location: location,
       );
@@ -295,8 +284,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (mounted) {
         if (sentCount > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Location shared successfully with $sentCount contact(s)'),
+            const SnackBar(
+              content: Text('Telegram opened - select contacts to share location'),
               backgroundColor: Colors.green,
             ),
           );
@@ -324,13 +313,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// Share location via other apps using native chooser
   Future<void> _shareViaMoreApps(
-    List<ContactModel> contacts,
     LocationModel location,
   ) async {
     try {
-      final smsService = SmsService();
-      final wasShared = await smsService.shareLocationWithMoreApps(
-        contacts: contacts,
+      final wasShared = await _smsService.shareLocationWithMoreApps(
         location: location,
       );
 
@@ -633,6 +619,72 @@ class _QuickActionCard extends StatelessWidget {
   }
 }
 
+/// Dialog for selecting which app to use for sharing location
+class _AppChooserDialog extends StatelessWidget {
+  final VoidCallback onWhatsApp;
+  final VoidCallback onSms;
+  final VoidCallback onTelegram;
+  final VoidCallback onMore;
+
+  const _AppChooserDialog({
+    required this.onWhatsApp,
+    required this.onSms,
+    required this.onTelegram,
+    required this.onMore,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Open with'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 200),
+        child: SizedBox(
+          width: double.maxFinite,
+          child: GridView.count(
+            crossAxisCount: 4,
+            shrinkWrap: true,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            children: [
+              _AppIcon(
+                label: 'WhatsApp',
+                icon: FontAwesomeIcons.whatsapp,
+                color: const Color(0xFF25D366),
+                onTap: onWhatsApp,
+              ),
+              _AppIcon(
+                label: 'Messages',
+                icon: FontAwesomeIcons.comment,
+                color: const Color(0xFF0084FF),
+                onTap: onSms,
+              ),
+              _AppIcon(
+                label: 'Telegram',
+                icon: FontAwesomeIcons.telegram,
+                color: const Color(0xFF0088cc),
+                onTap: onTelegram,
+              ),
+              _AppIcon(
+                label: 'More',
+                icon: FontAwesomeIcons.share,
+                color: Colors.grey,
+                onTap: onMore,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+}
+
 class _AppIcon extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -670,7 +722,7 @@ class _AppIcon extends StatelessWidget {
           Text(
             label,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
           ),
         ],
       ),

@@ -235,15 +235,22 @@ class _UnifiedAuthScreenState extends ConsumerState<UnifiedAuthScreen> {
         .read(passwordBreachServiceProvider)
         .checkPassword(password);
 
+    // Check mounted after first async gap
+    if (!mounted) return;
+
     // Now perform login
     await ref.read(authStateProvider.notifier).loginWithEmail(email, password);
 
+    // Check mounted after login - widget may have been disposed due to navigation
+    if (!mounted) return;
+
     // After login, check if we should show breach warning
-    // (works even if widget unmounted - provider operations are still valid)
     final authState = ref.read(authStateProvider);
     if (authState.isAuthenticated && breachResult.isBreached) {
       // Load user-specific preference
       await ref.read(dontShowBreachWarningProvider.notifier).loadForUser(authState.user!.id);
+      // Check mounted again after another async gap
+      if (!mounted) return;
       if (!ref.read(dontShowBreachWarningProvider)) {
         ref.read(showBreachWarningProvider.notifier).state = true;
       }

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../core/models/contact_model.dart';
 import '../core/providers/auth_provider.dart';
 import '../features/auth/screens/otp_screen.dart';
+import '../features/auth/screens/splash_screen.dart';
 import '../features/auth/screens/unified_auth_screen.dart';
 import '../features/home/screens/home_screen.dart';
 import '../features/sos/screens/sos_screen.dart';
@@ -26,17 +27,24 @@ final routerProvider = Provider<GoRouter>((ref) {
   final authNotifier = _AuthNotifier(ref);
 
   return GoRouter(
-    initialLocation: '/auth',
+    initialLocation: '/splash',
     refreshListenable: authNotifier,
     redirect: (context, state) {
       final authState = ref.read(authStateProvider);
       final isLoggedIn = authState.isAuthenticated;
       final isLoading = authState.isLoading;
+      final isSplashRoute = state.matchedLocation == '/splash';
       final isAuthRoute = state.matchedLocation == '/auth' ||
           state.matchedLocation == '/otp';
 
-      // Still loading - allow current route
-      if (isLoading) return null;
+      // Still loading - show splash screen
+      if (isLoading && !isSplashRoute) return '/splash';
+
+      // Loading complete - proceed with auth checks
+      if (!isLoading && isSplashRoute) {
+        // If logged in, go to home, otherwise go to auth
+        return isLoggedIn ? '/' : '/auth';
+      }
 
       // Not logged in and not on auth page
       if (!isLoggedIn && !isAuthRoute) return '/auth';
@@ -47,6 +55,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      // Splash screen shown during initialization
+      GoRoute(
+        path: '/splash',
+        builder: (context, state) => const SplashScreen(),
+      ),
       // Auth routes - unified auth screen replaces login/register
       GoRoute(
         path: '/auth',

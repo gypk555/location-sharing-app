@@ -121,6 +121,8 @@ class SosScreen extends ConsumerWidget {
         return 'Sending Alerts...';
       case SosStatus.sent:
         return 'Alerts Sent!';
+      case SosStatus.partiallySent:
+        return 'Alerts Partially Sent';
       case SosStatus.failed:
         return 'Failed to Send';
     }
@@ -138,6 +140,8 @@ class SosScreen extends ConsumerWidget {
         return 'Contacting your emergency contacts';
       case SosStatus.sent:
         return 'Your contacts have been alerted';
+      case SosStatus.partiallySent:
+        return 'Some contacts could not be reached';
       case SosStatus.failed:
         return 'Please check your contacts and try again';
     }

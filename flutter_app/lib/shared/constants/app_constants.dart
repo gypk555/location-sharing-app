@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AppConstants {
   AppConstants._();
@@ -7,22 +8,30 @@ class AppConstants {
   static const String appName = 'SafetyApp';
   static const String appVersion = '1.0.0';
 
+  // Default API endpoints (fallback if not configured in .env)
+  static const String _defaultDevApiUrl = 'http://10.0.2.2:3001';
+  static const String _defaultDevWsUrl = 'ws://10.0.2.2:3001';
+  static const String _defaultProdApiUrl = 'https://api.safetyapp.com';
+  static const String _defaultProdWsUrl = 'wss://api.safetyapp.com';
+
   // API Endpoints (Elysia Backend)
-  // IMPORTANT: Use HTTPS in production for security
+  // Load from .env file for security and flexibility
   static String get apiBaseUrl {
-    if (kDebugMode) {
-      // Local development - Android emulator
-      return 'http://10.0.2.2:3001';
+    final envUrl = dotenv.env['API_BASE_URL'];
+    if (envUrl != null && envUrl.isNotEmpty) {
+      return envUrl;
     }
-    // Production - MUST use HTTPS
-    return 'https://api.safetyapp.com';
+    // Fallback to defaults based on build mode
+    return kDebugMode ? _defaultDevApiUrl : _defaultProdApiUrl;
   }
 
   static String get wsBaseUrl {
-    if (kDebugMode) {
-      return 'ws://10.0.2.2:3001';
+    final envUrl = dotenv.env['WS_BASE_URL'];
+    if (envUrl != null && envUrl.isNotEmpty) {
+      return envUrl;
     }
-    return 'wss://api.safetyapp.com';
+    // Fallback to defaults based on build mode
+    return kDebugMode ? _defaultDevWsUrl : _defaultProdWsUrl;
   }
 
   // Storage Keys
@@ -32,8 +41,11 @@ class AppConstants {
   static const String settingsBoxName = 'settings_box';
 
   // Location Settings
-  static const int locationUpdateIntervalMs = 5000;
-  static const int locationDistanceFilterMeters = 10;
+  // Use different intervals based on mode for battery efficiency
+  static const int locationUpdateIntervalNormalMs = 60000;      // 1 min - normal mode
+  static const int locationUpdateIntervalSharingMs = 15000;     // 15 sec - active sharing
+  static const int locationUpdateIntervalEmergencyMs = 5000;    // 5 sec - SOS mode
+  static const int locationDistanceFilterMeters = 50;           // Increased from 10m
 
   // SOS Settings
   static const int shakeThreshold = 15;

@@ -61,33 +61,41 @@ class PasswordBreachCheckState {
 class PasswordBreachCheckNotifier extends StateNotifier<PasswordBreachCheckState> {
   PasswordBreachCheckNotifier() : super(const PasswordBreachCheckState());
 
+  /// Safely update state only if the notifier is still mounted.
+  void _safeSetState(PasswordBreachCheckState newState) {
+    if (mounted) {
+      state = newState;
+    }
+  }
+
   /// Reset to idle state
-  void reset() => state = const PasswordBreachCheckState();
+  void reset() => _safeSetState(const PasswordBreachCheckState());
 
   /// Set checking/loading state
-  void setChecking() => state = state.copyWith(state: PasswordBreachState.checking);
+  void setChecking() => _safeSetState(state.copyWith(state: PasswordBreachState.checking));
 
   /// Update state based on service result
   void setResult(PasswordBreachResult result) {
+    if (!mounted) return;
     switch (result.status) {
       case BreachCheckStatus.safe:
-        state = state.copyWith(state: PasswordBreachState.safe);
+        _safeSetState(state.copyWith(state: PasswordBreachState.safe));
         break;
       case BreachCheckStatus.breached:
-        state = state.copyWith(
+        _safeSetState(state.copyWith(
           state: PasswordBreachState.breached,
           breachCount: result.breachCount,
-        );
+        ));
         break;
       case BreachCheckStatus.offline:
-        state = state.copyWith(state: PasswordBreachState.offline);
+        _safeSetState(state.copyWith(state: PasswordBreachState.offline));
         break;
       case BreachCheckStatus.timeout:
       case BreachCheckStatus.error:
-        state = state.copyWith(
+        _safeSetState(state.copyWith(
           state: PasswordBreachState.error,
           errorMessage: result.errorMessage,
-        );
+        ));
         break;
     }
   }
@@ -116,6 +124,13 @@ class DontShowBreachWarningNotifier extends StateNotifier<bool> {
 
   DontShowBreachWarningNotifier() : super(false);
 
+  /// Safely update state only if the notifier is still mounted.
+  void _safeSetState(bool newState) {
+    if (mounted) {
+      state = newState;
+    }
+  }
+
   /// Get the storage key for current user
   String get _storageKey => '$_kDontShowBreachWarningKeyPrefix${_currentUserId ?? 'anonymous'}';
 
@@ -123,20 +138,20 @@ class DontShowBreachWarningNotifier extends StateNotifier<bool> {
   Future<void> loadForUser(String userId) async {
     _currentUserId = userId;
     final prefs = await SharedPreferences.getInstance();
-    state = prefs.getBool(_storageKey) ?? false;
+    _safeSetState(prefs.getBool(_storageKey) ?? false);
   }
 
   /// Set preference and save to SharedPreferences
   Future<void> setDontShowAgain(bool value) async {
     if (_currentUserId == null) return;
-    state = value;
+    _safeSetState(value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_storageKey, value);
   }
 
   /// Reset preference for current user
   Future<void> reset() async {
-    state = false;
+    _safeSetState(false);
     if (_currentUserId == null) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_storageKey);
@@ -145,6 +160,6 @@ class DontShowBreachWarningNotifier extends StateNotifier<bool> {
   /// Clear state on logout (don't delete preference, just reset in-memory state)
   void clearOnLogout() {
     _currentUserId = null;
-    state = false;
+    _safeSetState(false);
   }
 }

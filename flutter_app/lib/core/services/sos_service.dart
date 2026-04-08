@@ -13,6 +13,7 @@ enum SosStatus {
   triggered,
   sending,
   sent,
+  partiallySent, // Some contacts received SOS, but not all
   failed,
 }
 
@@ -23,6 +24,9 @@ class SosService {
 
   final LocationService _locationService = LocationService();
   final SmsService _smsService = SmsService();
+
+  // Cache Hive box to avoid repeated openBox() calls (performance optimization)
+  Box<ContactModel>? _contactsBox;
 
   StreamSubscription<AccelerometerEvent>? _shakeSubscription;
   final _sosStatusController = StreamController<SosStatus>.broadcast();
@@ -35,6 +39,7 @@ class SosService {
   SosStatus get currentStatus => _currentStatus;
 
   Timer? _countdownTimer;
+  Timer? _resetTimer;
   int _shakeCount = 0;
   DateTime? _lastShakeTime;
 
@@ -154,28 +159,69 @@ class SosService {
         location: location,
       );
 
-      // Mark as sent if at least one was successful
-      _updateStatus(sentCount > 0 ? SosStatus.sent : SosStatus.failed);
+      // Track send status: success, partial, or failure
+      if (sentCount == contacts.length) {
+        // All contacts received the SOS alert
+        _updateStatus(SosStatus.sent);
+        AppLogger.info('SOS sent to all $sentCount contacts');
+      } else if (sentCount > 0) {
+        // Only some contacts received the SOS alert
+        _updateStatus(SosStatus.partiallySent);
+        AppLogger.warning('SOS sent to $sentCount/${contacts.length} contacts');
+      } else {
+        // No contacts received the SOS alert
+        _updateStatus(SosStatus.failed);
+        AppLogger.error('SOS failed to send to any contacts');
+      }
 
-      // Reset to idle after 3 seconds
-      Future.delayed(const Duration(seconds: 3), () {
-        _updateStatus(SosStatus.idle);
+      // Reset to idle after 3 seconds (use Timer instead of Future.delayed so it can be cancelled)
+      _resetTimer?.cancel();
+      _resetTimer = Timer(const Duration(seconds: 3), () {
+        // Check if controller is still open before updating status
+        if (!_sosStatusController.isClosed) {
+          _updateStatus(SosStatus.idle);
+        }
       });
     } catch (e) {
       AppLogger.error('SOS Error', e);
       _updateStatus(SosStatus.failed);
 
-      // Reset to idle after 3 seconds
-      Future.delayed(const Duration(seconds: 3), () {
-        _updateStatus(SosStatus.idle);
+      // Reset to idle after 3 seconds (use Timer instead of Future.delayed so it can be cancelled)
+      _resetTimer?.cancel();
+      _resetTimer = Timer(const Duration(seconds: 3), () {
+        // Check if controller is still open before updating status
+        if (!_sosStatusController.isClosed) {
+          _updateStatus(SosStatus.idle);
+        }
       });
     }
   }
 
+  /// Get cached Hive box, opening it if necessary (performance: avoid reopening on every operation)
+  Future<Box<ContactModel>> _getContactsBox() async {
+    // Check if cached box is still open
+    if (_contactsBox != null && _contactsBox!.isOpen) {
+      return _contactsBox!;
+    }
+
+    // Try to get existing open box before creating new one
+    try {
+      if (Hive.isBoxOpen(AppConstants.contactsBoxName)) {
+        _contactsBox = Hive.box<ContactModel>(AppConstants.contactsBoxName);
+        return _contactsBox!;
+      }
+    } catch (e) {
+      AppLogger.debug('Box not open in registry, opening new instance');
+    }
+
+    // Open new box if not already open
+    _contactsBox = await Hive.openBox<ContactModel>(AppConstants.contactsBoxName);
+    return _contactsBox!;
+  }
+
   Future<List<ContactModel>> _getSosContacts() async {
     try {
-      final box =
-          await Hive.openBox<ContactModel>(AppConstants.contactsBoxName);
+      final box = await _getContactsBox();
       return box.values.where((c) => c.isSosContact).toList();
     } catch (e) {
       AppLogger.error('Error getting SOS contacts', e);
@@ -189,9 +235,25 @@ class SosService {
   }
 
   void dispose() {
+    // Cancel all subscriptions and timers
     _shakeSubscription?.cancel();
+    _shakeSubscription = null;
     _countdownTimer?.cancel();
-    _sosStatusController.close();
-    _countdownController.close();
+    _countdownTimer = null;
+    _resetTimer?.cancel();
+    _resetTimer = null;
+
+    // Close stream controllers safely (check if already closed)
+    if (!_sosStatusController.isClosed) {
+      _sosStatusController.close();
+    }
+    if (!_countdownController.isClosed) {
+      _countdownController.close();
+    }
+
+    // DON'T close the Hive box - it's shared across the app via singleton pattern
+    // Closing it here would cause crashes in other parts of the app that still
+    // reference this box. Just clear our cached reference.
+    _contactsBox = null;
   }
 }

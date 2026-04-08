@@ -63,55 +63,64 @@ class LocationNotifier extends StateNotifier<LocationState> {
     _checkPermission();
   }
 
+  /// Safely update state only if the notifier is still mounted.
+  void _safeSetState(LocationState newState) {
+    if (mounted) {
+      state = newState;
+    }
+  }
+
   Future<void> _checkPermission() async {
     final hasPermission = await _locationService.checkPermission();
-    state = state.copyWith(hasPermission: hasPermission);
+    _safeSetState(state.copyWith(hasPermission: hasPermission));
   }
 
   Future<void> requestPermission() async {
-    state = state.copyWith(isLoading: true);
+    _safeSetState(state.copyWith(isLoading: true));
     final hasPermission = await _locationService.checkPermission();
-    state = state.copyWith(hasPermission: hasPermission, isLoading: false);
+    _safeSetState(state.copyWith(hasPermission: hasPermission, isLoading: false));
   }
 
   Future<void> getCurrentLocation() async {
-    state = state.copyWith(isLoading: true, error: null);
+    _safeSetState(state.copyWith(isLoading: true, error: null));
     try {
       final location = await _locationService.getCurrentLocation();
+      if (!mounted) return;
       if (location != null) {
-        state = state.copyWith(currentLocation: location, isLoading: false);
+        _safeSetState(state.copyWith(currentLocation: location, isLoading: false));
       } else {
-        state = state.copyWith(
+        _safeSetState(state.copyWith(
           isLoading: false,
           error: 'Could not get location',
-        );
+        ));
       }
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      _safeSetState(state.copyWith(isLoading: false, error: e.toString()));
     }
   }
 
   Future<void> startTracking() async {
     if (!state.hasPermission) {
       await requestPermission();
-      if (!state.hasPermission) return;
+      if (!mounted || !state.hasPermission) return;
     }
 
     await _locationService.startTracking();
+    if (!mounted) return;
 
     _locationSubscription?.cancel();
     _locationSubscription = _locationService.locationStream.listen((location) {
-      state = state.copyWith(currentLocation: location);
+      _safeSetState(state.copyWith(currentLocation: location));
     });
 
-    state = state.copyWith(isTracking: true);
+    _safeSetState(state.copyWith(isTracking: true));
   }
 
   void stopTracking() {
     _locationService.stopTracking();
     _locationSubscription?.cancel();
     _locationSubscription = null;
-    state = state.copyWith(isTracking: false);
+    _safeSetState(state.copyWith(isTracking: false));
   }
 
   @override

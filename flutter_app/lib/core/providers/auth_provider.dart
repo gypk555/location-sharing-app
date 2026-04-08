@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/auth_service.dart';
 import '../models/user_model.dart';
+import '../../shared/utils/logger.dart';
 
 final authServiceProvider = Provider<AuthService>((ref) {
   return AuthService();
@@ -44,83 +45,104 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _initialize();
   }
 
+  /// Safely update state only if the notifier is still mounted.
+  /// This prevents "setState after dispose" errors when async operations
+  /// complete after the widget has been disposed.
+  void _safeSetState(AuthState newState) {
+    if (mounted) {
+      state = newState;
+    }
+  }
+
   Future<void> _initialize() async {
-    await _authService.initialize();
-    state = AuthState(user: _authService.currentUser, isLoading: false);
+    try {
+      await _authService.initialize();
+      _safeSetState(AuthState(user: _authService.currentUser, isLoading: false));
+    } catch (e) {
+      // Log full error for debugging (never expose to user)
+      AppLogger.error('Auth initialization failed', e);
+
+      // Show user-friendly message instead of raw error
+      _safeSetState(AuthState(
+        user: null,
+        isLoading: false,
+        error: 'Could not connect to server. Please check your internet connection.',
+      ));
+    }
   }
 
   Future<void> sendPhoneOtp(String phone) async {
-    state = state.copyWith(isLoading: true, error: null);
+    _safeSetState(state.copyWith(isLoading: true, error: null));
     try {
       await _authService.sendPhoneOtp(phone);
-      state = state.copyWith(isLoading: false);
+      _safeSetState(state.copyWith(isLoading: false));
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      _safeSetState(state.copyWith(isLoading: false, error: e.toString()));
     }
   }
 
   Future<void> verifyPhoneOtp(String phone, String otp) async {
-    state = state.copyWith(isLoading: true, error: null);
+    _safeSetState(state.copyWith(isLoading: true, error: null));
     try {
       final user = await _authService.verifyPhoneOtp(phone, otp);
-      state = state.copyWith(user: user, isLoading: false);
+      _safeSetState(state.copyWith(user: user, isLoading: false));
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      _safeSetState(state.copyWith(isLoading: false, error: e.toString()));
     }
   }
 
   Future<void> registerWithEmail(
       String email, String password, String name) async {
-    state = state.copyWith(isLoading: true, error: null);
+    _safeSetState(state.copyWith(isLoading: true, error: null));
     try {
       final user = await _authService.registerWithEmail(email, password, name);
-      state = state.copyWith(user: user, isLoading: false);
+      _safeSetState(state.copyWith(user: user, isLoading: false));
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      _safeSetState(state.copyWith(isLoading: false, error: e.toString()));
     }
   }
 
   Future<void> loginWithEmail(String email, String password) async {
-    state = state.copyWith(isLoading: true, error: null);
+    _safeSetState(state.copyWith(isLoading: true, error: null));
     try {
       final user = await _authService.loginWithEmail(email, password);
-      state = state.copyWith(user: user, isLoading: false);
+      _safeSetState(state.copyWith(user: user, isLoading: false));
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      _safeSetState(state.copyWith(isLoading: false, error: e.toString()));
     }
   }
 
   Future<void> signInWithGoogle() async {
-    state = state.copyWith(isLoading: true, error: null);
+    _safeSetState(state.copyWith(isLoading: true, error: null));
     try {
       final user = await _authService.signInWithGoogle();
-      state = state.copyWith(user: user, isLoading: false);
+      _safeSetState(state.copyWith(user: user, isLoading: false));
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      _safeSetState(state.copyWith(isLoading: false, error: e.toString()));
     }
   }
 
   Future<void> signInWithApple() async {
-    state = state.copyWith(isLoading: true, error: null);
+    _safeSetState(state.copyWith(isLoading: true, error: null));
     try {
       final user = await _authService.signInWithApple();
-      state = state.copyWith(user: user, isLoading: false);
+      _safeSetState(state.copyWith(user: user, isLoading: false));
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      _safeSetState(state.copyWith(isLoading: false, error: e.toString()));
     }
   }
 
   Future<void> signOut() async {
-    state = state.copyWith(isLoading: true, error: null);
+    _safeSetState(state.copyWith(isLoading: true, error: null));
     try {
       await _authService.signOut();
-      state = const AuthState(isLoading: false);
+      _safeSetState(const AuthState(isLoading: false));
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      _safeSetState(state.copyWith(isLoading: false, error: e.toString()));
     }
   }
 
   void clearError() {
-    state = state.copyWith(error: null);
+    _safeSetState(state.copyWith(error: null));
   }
 }

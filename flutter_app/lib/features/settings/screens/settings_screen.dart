@@ -635,6 +635,8 @@ class _UnsyncedContactsLogoutDialogState
 
     // Check if online first
     final isOnline = await ref.read(contactsProvider.notifier).isOnline();
+    if (!mounted) return;
+
     if (!isOnline) {
       setState(() {
         _isSyncing = false;
@@ -644,6 +646,7 @@ class _UnsyncedContactsLogoutDialogState
     }
 
     final result = await ref.read(contactsProvider.notifier).syncToSupabase();
+    if (!mounted) return;
 
     if (result.success) {
       setState(() {
@@ -687,6 +690,7 @@ class _UnsyncedContactsLogoutDialogState
     });
 
     final result = await ref.read(contactsProvider.notifier).exportContacts();
+    if (!mounted) return;
 
     if (result.success) {
       setState(() {
@@ -694,15 +698,15 @@ class _UnsyncedContactsLogoutDialogState
       });
 
       // Show success and logout
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Exported ${result.contactCount} contacts'),
+          backgroundColor: AppTheme.successColor,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      await Future.delayed(const Duration(milliseconds: 500));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Exported ${result.contactCount} contacts'),
-            backgroundColor: AppTheme.successColor,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-        await Future.delayed(const Duration(milliseconds: 500));
         await _performLogout();
       }
     } else {
