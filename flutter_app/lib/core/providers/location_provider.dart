@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/location_service.dart';
 import '../models/location_model.dart';
+import '../../shared/utils/logger.dart';
 
 final locationServiceProvider = Provider<LocationService>((ref) {
   final service = LocationService();
@@ -100,9 +101,28 @@ class LocationNotifier extends StateNotifier<LocationState> {
   }
 
   Future<void> startTracking() async {
+    _safeSetState(state.copyWith(isLoading: true, error: null));
+
+    final serviceEnabled = await _locationService.isServiceEnabled();
+    AppLogger.info('startTracking: serviceEnabled=$serviceEnabled');
+    if (!serviceEnabled) {
+      _safeSetState(state.copyWith(
+        isLoading: false,
+        error: 'Location services are disabled. Turn on GPS in system settings.',
+      ));
+      return;
+    }
+
     if (!state.hasPermission) {
       await requestPermission();
-      if (!mounted || !state.hasPermission) return;
+      AppLogger.info('startTracking: hasPermission=${state.hasPermission}');
+      if (!mounted || !state.hasPermission) {
+        _safeSetState(state.copyWith(
+          isLoading: false,
+          error: 'Location permission not granted. Enable it in system settings.',
+        ));
+        return;
+      }
     }
 
     await _locationService.startTracking();
@@ -113,7 +133,19 @@ class LocationNotifier extends StateNotifier<LocationState> {
       _safeSetState(state.copyWith(currentLocation: location));
     });
 
-    _safeSetState(state.copyWith(isTracking: true));
+    _safeSetState(state.copyWith(isTracking: true, isLoading: false));
+  }
+
+  void clearError() {
+    _safeSetState(state.copyWith(error: null));
+  }
+
+  Future<void> openLocationSettings() async {
+    await _locationService.openLocationSettings();
+  }
+
+  Future<void> openAppSettings() async {
+    await _locationService.openAppSettings();
   }
 
   void stopTracking() {

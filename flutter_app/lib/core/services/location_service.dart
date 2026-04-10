@@ -49,11 +49,6 @@ class LocationService {
   }
 
   Future<bool> checkPermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      return false;
-    }
-
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -67,6 +62,18 @@ class LocationService {
     }
 
     return true;
+  }
+
+  Future<bool> isServiceEnabled() async {
+    return Geolocator.isLocationServiceEnabled();
+  }
+
+  Future<bool> openLocationSettings() async {
+    return Geolocator.openLocationSettings();
+  }
+
+  Future<bool> openAppSettings() async {
+    return Geolocator.openAppSettings();
   }
 
   Future<LocationModel?> getCurrentLocation() async {

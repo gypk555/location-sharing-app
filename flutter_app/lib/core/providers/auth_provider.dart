@@ -15,11 +15,17 @@ final authStateProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
 class AuthState {
   final UserModel? user;
   final bool isLoading;
+  final bool hasInitialized;
+  final String? initError;
   final String? error;
+
+  static const _unset = Object();
 
   const AuthState({
     this.user,
     this.isLoading = false,
+    this.hasInitialized = false,
+    this.initError,
     this.error,
   });
 
@@ -28,11 +34,15 @@ class AuthState {
   AuthState copyWith({
     UserModel? user,
     bool? isLoading,
+    bool? hasInitialized,
+    Object? initError = _unset,
     String? error,
   }) {
     return AuthState(
       user: user ?? this.user,
       isLoading: isLoading ?? this.isLoading,
+      hasInitialized: hasInitialized ?? this.hasInitialized,
+      initError: initError == _unset ? this.initError : initError as String?,
       error: error,
     );
   }
@@ -57,7 +67,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> _initialize() async {
     try {
       await _authService.initialize();
-      _safeSetState(AuthState(user: _authService.currentUser, isLoading: false));
+      _safeSetState(AuthState(
+        user: _authService.currentUser,
+        isLoading: false,
+        hasInitialized: true,
+        initError: null,
+      ));
     } catch (e) {
       // Log full error for debugging (never expose to user)
       AppLogger.error('Auth initialization failed', e);
@@ -66,6 +81,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       _safeSetState(AuthState(
         user: null,
         isLoading: false,
+        hasInitialized: true,
+        initError: 'Could not connect to server. Please check your internet connection.',
         error: 'Could not connect to server. Please check your internet connection.',
       ));
     }
@@ -136,10 +153,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _safeSetState(state.copyWith(isLoading: true, error: null));
     try {
       await _authService.signOut();
-      _safeSetState(const AuthState(isLoading: false));
+      _safeSetState(const AuthState(isLoading: false, hasInitialized: true));
     } catch (e) {
       _safeSetState(state.copyWith(isLoading: false, error: e.toString()));
     }
+  }
+
+  Future<void> retryInitialize() async {
+    _safeSetState(const AuthState(isLoading: true, hasInitialized: false));
+    await _initialize();
   }
 
   void clearError() {

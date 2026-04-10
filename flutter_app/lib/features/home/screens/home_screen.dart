@@ -25,10 +25,42 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   // Singleton SMS service instance - cached at class level for reuse
   final _smsService = SmsService();
+  ProviderSubscription<LocationState>? _locationErrorSub;
 
   @override
   void initState() {
     super.initState();
+    _locationErrorSub = ref.listenManual<LocationState>(locationProvider, (previous, next) {
+      final prevError = previous?.error;
+      final nextError = next.error;
+      if (nextError != null && nextError != prevError && mounted) {
+        final isServiceError = nextError.contains('Location services');
+        final isPermissionError = nextError.contains('permission');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(nextError),
+            backgroundColor: Colors.orange,
+            action: isServiceError
+                ? SnackBarAction(
+                    label: 'Open Settings',
+                    textColor: Colors.white,
+                    onPressed: () {
+                      ref.read(locationProvider.notifier).openLocationSettings();
+                    },
+                  )
+                : isPermissionError
+                    ? SnackBarAction(
+                        label: 'App Settings',
+                        textColor: Colors.white,
+                        onPressed: () {
+                          ref.read(locationProvider.notifier).openAppSettings();
+                        },
+                      )
+                    : null,
+          ),
+        );
+      }
+    });
     // Check for breach warning after frame is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -37,6 +69,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.read(contactsProvider.notifier).ensureSyncedForCurrentUser();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _locationErrorSub?.close();
+    super.dispose();
   }
 
   /// Show breach warning banner if flag is set
@@ -472,6 +510,63 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
+
+            if (locationState.error != null) ...[
+              const SizedBox(height: 12),
+              Card(
+                color: AppTheme.warningColor.withValues(alpha: 0.1),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        locationState.error!,
+                        style: TextStyle(
+                          color: AppTheme.warningColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          if (locationState.error!
+                              .toLowerCase()
+                              .contains('services'))
+                            TextButton(
+                              onPressed: () {
+                                ref
+                                    .read(locationProvider.notifier)
+                                    .openLocationSettings();
+                              },
+                              child: const Text('Open Settings'),
+                            ),
+                          if (locationState.error!
+                              .toLowerCase()
+                              .contains('permission'))
+                            TextButton(
+                              onPressed: () {
+                                ref
+                                    .read(locationProvider.notifier)
+                                    .openAppSettings();
+                              },
+                              child: const Text('App Settings'),
+                            ),
+                          TextButton(
+                            onPressed: () {
+                              ref.read(locationProvider.notifier).clearError();
+                            },
+                            child: const Text('Dismiss'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
 
             const SizedBox(height: 24),
 

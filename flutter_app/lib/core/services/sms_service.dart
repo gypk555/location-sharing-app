@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/location_model.dart';
@@ -64,34 +65,55 @@ class SmsService {
   /// Send SMS using url_launcher (opens default SMS app)
   Future<bool> _sendSms(List<String> phoneNumbers, String message) async {
     try {
-      // Join multiple phone numbers with comma (some SMS apps support this)
-      // Note: Do NOT add + prefix here as Android SMS URI doesn't handle it properly
-      // for multiple comma-separated recipients. Use phone numbers as-is.
-      final recipients = phoneNumbers.join(',');
-
-      // Encode the message for URL
-      final encodedMessage = Uri.encodeComponent(message);
-
-      // Create sms: URI
-      final smsUri = Uri.parse('sms:$recipients?body=$encodedMessage');
-
-      // Launch the SMS app
-      if (await canLaunchUrl(smsUri)) {
-        final launched = await launchUrl(smsUri);
-        return launched;
-      } else {
-        // Fallback: try without body parameter (some platforms)
-        final simpleSmsUri = Uri.parse('sms:$recipients');
-        if (await canLaunchUrl(simpleSmsUri)) {
-          return await launchUrl(simpleSmsUri);
-        }
+      // Normalize to keep digits and a leading "+" if present
+      final normalized =
+          phoneNumbers.map(_normalizePhoneForSms).where((p) => p.isNotEmpty).toList();
+      if (normalized.isEmpty) {
+        AppLogger.warning('No valid phone numbers for SMS');
+        return false;
       }
+
+      // Android prefers ";" as recipient separator; iOS is fine with ","
+      final separator = Platform.isAndroid ? ';' : ',';
+      final recipients = normalized.join(separator);
+
+      // Create sms: URI with body
+      final smsUri = Uri(
+        scheme: 'sms',
+        path: recipients,
+        queryParameters: {'body': message},
+      );
+
+      // Launch the SMS app (no canLaunchUrl gate; can be blocked by package visibility)
+      final launched = await launchUrl(
+        smsUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (launched) return true;
+
+      // Fallback: try without body parameter
+      final simpleSmsUri = Uri(
+        scheme: 'sms',
+        path: recipients,
+      );
+      return await launchUrl(
+        simpleSmsUri,
+        mode: LaunchMode.externalApplication,
+      );
       AppLogger.warning('Could not launch SMS app');
       return false;
     } catch (e, stackTrace) {
       AppLogger.error('Error sending SMS', e, stackTrace);
       return false;
     }
+  }
+
+  String _normalizePhoneForSms(String phone) {
+    final trimmed = phone.trim();
+    final hasPlus = trimmed.startsWith('+');
+    final digitsOnly = trimmed.replaceAll(RegExp(r'[^\d]'), '');
+    if (digitsOnly.isEmpty) return '';
+    return hasPlus ? '+$digitsOnly' : digitsOnly;
   }
 
   /// Format location for SMS message

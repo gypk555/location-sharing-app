@@ -32,16 +32,23 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final authState = ref.read(authStateProvider);
       final isLoggedIn = authState.isAuthenticated;
-      final isLoading = authState.isLoading;
+      final hasInitialized = authState.hasInitialized;
+      final initError = authState.initError;
       final isSplashRoute = state.matchedLocation == '/splash';
       final isAuthRoute = state.matchedLocation == '/auth' ||
           state.matchedLocation == '/otp';
 
-      // Still loading - show splash screen
-      if (isLoading && !isSplashRoute) return '/splash';
+      // App not initialized yet - show splash screen (but allow auth routes to render)
+      if (!hasInitialized && !isSplashRoute && !isAuthRoute) return '/splash';
+
+      // Initialization error - keep user on splash to show retry UI
+      // Allow logged-in users to proceed (offline-friendly)
+      if (initError != null && !isLoggedIn) {
+        return isSplashRoute ? null : '/splash';
+      }
 
       // Loading complete - proceed with auth checks
-      if (!isLoading && isSplashRoute) {
+      if (hasInitialized && isSplashRoute) {
         // If logged in, go to home, otherwise go to auth
         return isLoggedIn ? '/' : '/auth';
       }
