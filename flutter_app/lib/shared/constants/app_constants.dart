@@ -39,6 +39,7 @@ class AppConstants {
   static const String contactsBoxName = 'contacts_box';
   static const String locationBoxName = 'location_box';
   static const String settingsBoxName = 'settings_box';
+  static const String cachedUserKey = 'cached_user_json';
 
   // Location Settings
   // Use different intervals based on mode for battery efficiency

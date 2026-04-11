@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/user_model.dart';
@@ -46,18 +49,81 @@ class AuthService {
   }
 
   Future<void> initialize() async {
-    await _loadStoredUser();
+    final sw = Stopwatch()..start();
+    AppLogger.info('AuthService.initialize start');
+    await loadCachedUserFast();
+    await loadStoredUserFromHive();
+    sw.stop();
+    AppLogger.info('AuthService.initialize done in ${sw.elapsedMilliseconds}ms');
   }
 
-  Future<void> _loadStoredUser() async {
+  Future<UserModel?> loadCachedUserFast() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(AppConstants.cachedUserKey);
+      if (raw == null || raw.isEmpty) return null;
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      _currentUser = UserModel(
+        id: json['id'] as String,
+        authProvider: json['authProvider'] as String,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        email: json['email'] as String?,
+        phone: json['phone'] as String?,
+        name: json['name'] as String?,
+        photoUrl: json['photoUrl'] as String?,
+      );
+      return _currentUser;
+    } catch (e) {
+      AppLogger.error('Error loading cached user', e);
+      return null;
+    }
+  }
+
+  Future<UserModel?> loadStoredUserFromHive() async {
+    try {
+      AppLogger.info('AuthService._loadStoredUser start');
       final box = await _box;
       if (box.isNotEmpty) {
         _currentUser = box.getAt(0);
+        AppLogger.info('AuthService._loadStoredUser loaded user from Hive');
+        await _saveUserToPrefs(_currentUser!);
+      } else {
+        AppLogger.info('AuthService._loadStoredUser no user in Hive');
       }
+      return _currentUser;
     } catch (e) {
       AppLogger.error('Error loading stored user', e);
+      return null;
     }
+  }
+
+  Future<void> _saveUserToPrefs(UserModel user) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        AppConstants.cachedUserKey,
+        jsonEncode(_minimalUserJson(user)),
+      );
+    } catch (e) {
+      AppLogger.error('Error saving cached user', e);
+    }
+  }
+
+  Future<void> _clearCachedUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(AppConstants.cachedUserKey);
+    } catch (e) {
+      AppLogger.error('Error clearing cached user', e);
+    }
+  }
+
+  Map<String, dynamic> _minimalUserJson(UserModel user) {
+    return {
+      'id': user.id,
+      'authProvider': user.authProvider,
+      'createdAt': user.createdAt.toIso8601String(),
+    };
   }
 
   Future<void> _saveUser(UserModel user) async {
@@ -66,6 +132,7 @@ class AuthService {
       await box.clear();
       await box.add(user);
       _currentUser = user;
+      await _saveUserToPrefs(user);
     } catch (e) {
       AppLogger.error('Error saving user', e);
     }
@@ -316,6 +383,7 @@ class AuthService {
 
       // Clear all user-specific data from local storage
       await _clearAllUserData();
+      await _clearCachedUser();
 
       AppLogger.info('User signed out and all data cleared');
     } catch (e) {
@@ -349,6 +417,7 @@ class AuthService {
 
       // Clear cached box reference
       _userBox = null;
+      await _clearCachedUser();
 
       AppLogger.info('All user data cleared from local storage');
     } catch (e) {

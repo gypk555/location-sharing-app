@@ -38,8 +38,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAuthRoute = state.matchedLocation == '/auth' ||
           state.matchedLocation == '/otp';
 
-      // App not initialized yet - show splash screen (but allow auth routes to render)
-      if (!hasInitialized && !isSplashRoute && !isAuthRoute) return '/splash';
+      // App not initialized yet - always show splash screen
+      // This prevents a brief flash of the auth screen before session restore completes.
+      if (!hasInitialized) return isSplashRoute ? null : '/splash';
 
       // Initialization error - keep user on splash to show retry UI
       // Allow logged-in users to proceed (offline-friendly)

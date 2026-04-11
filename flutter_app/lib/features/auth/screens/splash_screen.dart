@@ -17,10 +17,10 @@ class SplashScreen extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.shield,
-              size: 80,
-              color: Colors.white,
+            Image.asset(
+              'assets/images/app_icon.png',
+              width: 88,
+              height: 88,
             ),
             const SizedBox(height: 24),
             Text(
@@ -32,8 +32,13 @@ class SplashScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             if (initError == null)
-              const CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              const SizedBox(
+                height: 28,
+                width: 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
               )
             else
               Padding(

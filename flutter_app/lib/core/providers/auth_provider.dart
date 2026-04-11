@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/auth_service.dart';
 import '../models/user_model.dart';
@@ -66,13 +68,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> _initialize() async {
     try {
-      await _authService.initialize();
+      final sw = Stopwatch()..start();
+      AppLogger.info('AuthNotifier._initialize start');
+      final cachedUser = await _authService.loadCachedUserFast();
       _safeSetState(AuthState(
-        user: _authService.currentUser,
-        isLoading: false,
-        hasInitialized: true,
+        user: cachedUser,
+        isLoading: cachedUser == null,
+        hasInitialized: cachedUser != null,
         initError: null,
       ));
+      sw.stop();
+      AppLogger.info(
+        'AuthNotifier._initialize quick done in ${sw.elapsedMilliseconds}ms, '
+        'user=${cachedUser != null}',
+      );
+      unawaited(_hydrateFromHive());
     } catch (e) {
       // Log full error for debugging (never expose to user)
       AppLogger.error('Auth initialization failed', e);
@@ -85,6 +95,40 @@ class AuthNotifier extends StateNotifier<AuthState> {
         initError: 'Could not connect to server. Please check your internet connection.',
         error: 'Could not connect to server. Please check your internet connection.',
       ));
+    }
+  }
+
+  Future<void> _hydrateFromHive() async {
+    try {
+      final sw = Stopwatch()..start();
+      final hiveUser = await _authService.loadStoredUserFromHive();
+      if (!mounted) return;
+      if (hiveUser?.id != state.user?.id || !state.hasInitialized) {
+        _safeSetState(AuthState(
+          user: hiveUser,
+          isLoading: false,
+          hasInitialized: true,
+          initError: state.initError,
+          error: state.error,
+        ));
+      }
+      sw.stop();
+      AppLogger.info(
+        'AuthNotifier._hydrateFromHive done in ${sw.elapsedMilliseconds}ms, '
+        'user=${hiveUser != null}',
+      );
+    } catch (e) {
+      AppLogger.error('Auth hydrate failed', e);
+      // Ensure we don't get stuck on splash if Hive load fails
+      if (mounted && !state.hasInitialized) {
+        _safeSetState(AuthState(
+          user: state.user,
+          isLoading: false,
+          hasInitialized: true,
+          initError: state.initError,
+          error: state.error,
+        ));
+      }
     }
   }
 
