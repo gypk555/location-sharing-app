@@ -84,6 +84,10 @@ cp flutter_app/.env.example flutter_app/.env
 # SUPABASE_ANON_KEY=your-anon-key
 ```
 
+## Deferred / Known TODO
+
+- **Fake Call audio assets** — `lib/core/services/fake_call_service.dart` was originally wired to play `assets/sounds/ringtone.mp3` and `assets/sounds/fake_conversation.mp3` via `audioplayers`. Neither file has ever existed in the repo. As of the flutter-migration branch, the audio code and the `assets/sounds/` pubspec entry were removed pending proper implementation. When revisiting: (1) add real `ringtone.mp3` and `fake_conversation.mp3` under `flutter_app/assets/sounds/`, (2) re-add `- assets/sounds/` under `flutter:` `assets:` in `pubspec.yaml`, (3) restore `audioplayers` import + `_audioPlayer` field + `play/stop/setReleaseMode` calls in `triggerCall`/`answerCall`/`endCall`/`declineCall`/`dispose`. Feature priority #4.
+
 ## Agents Available
 
 - `security-reviewer` - Security vulnerability scanning

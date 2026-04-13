@@ -17,11 +17,7 @@ class SplashScreen extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset(
-              'assets/images/app_icon.png',
-              width: 88,
-              height: 88,
-            ),
+            const FlutterLogo(size: 88),
             const SizedBox(height: 24),
             Text(
               'Safety App',

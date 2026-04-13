@@ -290,7 +290,7 @@ class SettingsScreen extends ConsumerWidget {
     final result = await ref.read(contactsProvider.notifier).exportContacts();
 
     if (context.mounted) {
-      Navigator.pop(context); // Close loading dialog
+      Navigator.of(context, rootNavigator: true).pop(); // Close loading dialog
 
       if (result.success) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -369,7 +369,7 @@ class SettingsScreen extends ConsumerWidget {
         await ref.read(contactsProvider.notifier).importContactsFromFile();
 
     if (context.mounted) {
-      Navigator.pop(context); // Close loading dialog
+      Navigator.of(context, rootNavigator: true).pop(); // Close loading dialog
 
       if (result.success) {
         ScaffoldMessenger.of(context).showSnackBar(
