@@ -5,8 +5,15 @@ import '../services/password_breach_service.dart';
 /// Key prefix for storing "Don't show again" preference (user-specific)
 const _kDontShowBreachWarningKeyPrefix = 'dont_show_breach_warning_';
 
-/// Provider for the password breach service (auto-disposed to clean up Dio client)
-final passwordBreachServiceProvider = Provider.autoDispose<PasswordBreachService>((ref) {
+/// Provider for the password breach service.
+///
+/// Deliberately NOT autoDispose: the service holds a Dio HTTP client and is
+/// used for async operations during login (`ref.read` + `await checkPassword`).
+/// With autoDispose, the provider would be disposed the moment the synchronous
+/// `ref.read` returns, closing the Dio client mid-request and causing every
+/// breach check to fail with a network error. The service lives for the app
+/// lifetime; `ref.onDispose` still fires on ProviderScope teardown (app exit).
+final passwordBreachServiceProvider = Provider<PasswordBreachService>((ref) {
   final service = PasswordBreachService();
   ref.onDispose(() => service.dispose());
   return service;

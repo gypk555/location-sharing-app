@@ -77,7 +77,10 @@ class _UnifiedAuthScreenState extends ConsumerState<UnifiedAuthScreen> {
 
   @override
   void dispose() {
-    ref.read(passwordBreachCheckProvider.notifier).reset();
+    // Do NOT call `ref.read(...)` here — Riverpod 2.x throws
+    // `StateError: Cannot use "ref" after the widget was disposed`.
+    // The breach check state is reset in initState's post-frame callback
+    // on the next mount, so no cleanup is needed here.
     _confirmPasswordFocusNode.removeListener(_onConfirmPasswordFocus);
     _confirmPasswordFocusNode.dispose();
     _emailController.dispose();
@@ -229,30 +232,35 @@ class _UnifiedAuthScreenState extends ConsumerState<UnifiedAuthScreen> {
 
     final email = _emailController.text.trim();
 
-    // Check password breach BEFORE login (while widget is still mounted)
-    // This avoids race condition with router navigation
-    final breachResult = await ref
+    // Capture ProviderContainer before any async work. After the login
+    // await, the router may dispose this widget (during loadForUser's
+    // SharedPreferences yield), which would make any subsequent `ref.read`
+    // throw `StateError: Cannot use "ref" after the widget was disposed`.
+    // ProviderContainer is owned by ProviderScope and is independent of
+    // widget lifecycle, so reads on it remain valid after disposal.
+    final container = ProviderScope.containerOf(context);
+
+    // Check password breach BEFORE login so we have the result captured
+    // in a local variable regardless of what happens to the widget.
+    final breachResult = await container
         .read(passwordBreachServiceProvider)
         .checkPassword(password);
 
-    // Check mounted after first async gap
     if (!mounted) return;
 
-    // Now perform login
-    await ref.read(authStateProvider.notifier).loginWithEmail(email, password);
+    // Now perform login. This may trigger router navigation away from /auth.
+    await container.read(authStateProvider.notifier).loginWithEmail(email, password);
 
-    // Check mounted after login - widget may have been disposed due to navigation
-    if (!mounted) return;
-
-    // After login, check if we should show breach warning
-    final authState = ref.read(authStateProvider);
+    // After login, set the breach warning flag on HomeScreen if needed.
+    // All reads below use `container`, not `ref`, because this code may run
+    // after the widget has been disposed by the router.
+    final authState = container.read(authStateProvider);
     if (authState.isAuthenticated && breachResult.isBreached) {
-      // Load user-specific preference
-      await ref.read(dontShowBreachWarningProvider.notifier).loadForUser(authState.user!.id);
-      // Check mounted again after another async gap
-      if (!mounted) return;
-      if (!ref.read(dontShowBreachWarningProvider)) {
-        ref.read(showBreachWarningProvider.notifier).state = true;
+      await container
+          .read(dontShowBreachWarningProvider.notifier)
+          .loadForUser(authState.user!.id);
+      if (!container.read(dontShowBreachWarningProvider)) {
+        container.read(showBreachWarningProvider.notifier).state = true;
       }
     }
   }

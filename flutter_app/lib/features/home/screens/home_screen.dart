@@ -22,44 +22,56 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   // Singleton SMS service instance - cached at class level for reuse
   final _smsService = SmsService();
   ProviderSubscription<LocationState>? _locationErrorSub;
+  // Cached reference to the root ScaffoldMessenger so we can dismiss the
+  // breach warning MaterialBanner in dispose() without touching `context`.
+  // MaterialBanners live on the root ScaffoldMessenger above the router and
+  // would otherwise persist across logout back to the login screen.
+  ScaffoldMessengerState? _scaffoldMessenger;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _locationErrorSub = ref.listenManual<LocationState>(locationProvider, (previous, next) {
       final prevError = previous?.error;
       final nextError = next.error;
-      if (nextError != null && nextError != prevError && mounted) {
-        final isServiceError = nextError.contains('Location services');
-        final isPermissionError = nextError.contains('permission');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(nextError),
-            backgroundColor: Colors.orange,
-            action: isServiceError
-                ? SnackBarAction(
-                    label: 'Open Settings',
-                    textColor: Colors.white,
-                    onPressed: () {
-                      ref.read(locationProvider.notifier).openLocationSettings();
-                    },
-                  )
-                : isPermissionError
-                    ? SnackBarAction(
-                        label: 'App Settings',
-                        textColor: Colors.white,
-                        onPressed: () {
-                          ref.read(locationProvider.notifier).openAppSettings();
-                        },
-                      )
-                    : null,
-          ),
-        );
-      }
+      if (nextError == null || nextError == prevError) return;
+      // Use the cached _scaffoldMessenger instead of ScaffoldMessenger.of(context)
+      // so this callback stays safe even if it fires mid-teardown. The cache is
+      // populated in didChangeDependencies before the listener can ever fire,
+      // since Riverpod delivers the first callback asynchronously.
+      final messenger = _scaffoldMessenger;
+      if (messenger == null) return;
+      final isServiceError = nextError.contains('Location services');
+      final isPermissionError = nextError.contains('permission');
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(nextError),
+          backgroundColor: Colors.orange,
+          action: isServiceError
+              ? SnackBarAction(
+                  label: 'Open Settings',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    ref.read(locationProvider.notifier).openLocationSettings();
+                  },
+                )
+              : isPermissionError
+                  ? SnackBarAction(
+                      label: 'App Settings',
+                      textColor: Colors.white,
+                      onPressed: () {
+                        ref.read(locationProvider.notifier).openAppSettings();
+                      },
+                    )
+                  : null,
+        ),
+      );
     });
     // Check for breach warning after frame is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -67,12 +79,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _showBreachWarningIfNeeded();
         // Ensure contacts are loaded
         ref.read(contactsProvider.notifier).ensureSyncedForCurrentUser();
+        // Clear any stale "location services/permission" error if the user
+        // has since fixed it in system settings. Only clears when conditions
+        // are actually resolved (see LocationNotifier.refreshErrorState).
+        ref.read(locationProvider.notifier).refreshErrorState();
       }
     });
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // When the app resumes from background, the user may have just returned
+    // from system settings after enabling location / granting permission.
+    // Re-check so the stale error banner disappears.
+    if (state == AppLifecycleState.resumed && mounted) {
+      ref.read(locationProvider.notifier).refreshErrorState();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scaffoldMessenger = ScaffoldMessenger.of(context);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _scaffoldMessenger?.hideCurrentMaterialBanner();
     _locationErrorSub?.close();
     super.dispose();
   }
