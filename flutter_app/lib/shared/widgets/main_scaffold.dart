@@ -1,19 +1,57 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-class MainScaffold extends StatefulWidget {
+import '../../core/providers/live_sharing_provider.dart';
+
+class MainScaffold extends ConsumerStatefulWidget {
   final Widget child;
 
   const MainScaffold({super.key, required this.child});
 
   @override
-  State<MainScaffold> createState() => _MainScaffoldState();
+  ConsumerState<MainScaffold> createState() => _MainScaffoldState();
 }
 
-class _MainScaffoldState extends State<MainScaffold> {
+class _MainScaffoldState extends ConsumerState<MainScaffold>
+    with WidgetsBindingObserver {
   static const _exitConfirmWindow = Duration(seconds: 2);
   DateTime? _lastBackPressAt;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Pull any pre-existing active sharing session from the server on
+    // first shell mount. If a previous run left a session alive (user
+    // force-killed the app, time-boxed session hasn't expired, etc.),
+    // this repopulates the in-memory state so the home-screen tile can
+    // reflect it and the user can tap to view/stop.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(liveSharingProvider.notifier).hydrateFromServer();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // Re-hydrate the live-sharing state whenever the app comes to the
+    // foreground. Dart Timers don't fire while the app is backgrounded,
+    // so if a time-boxed session expired while the user was away, the
+    // in-memory state is stale. A server query catches that up and
+    // triggers stop() via hydrateFromServer's empty-response path.
+    if (state == AppLifecycleState.resumed && mounted) {
+      ref.read(liveSharingProvider.notifier).hydrateFromServer();
+    }
+  }
 
   int _getCurrentIndex(String location) {
     if (location.startsWith('/sos')) return 1;

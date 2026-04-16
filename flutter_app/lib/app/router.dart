@@ -13,6 +13,9 @@ import '../features/contacts/screens/contacts_screen.dart';
 import '../features/contacts/screens/add_contact_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/fake_call/screens/fake_call_screen.dart';
+import '../features/live_sharing/presentation/screens/active_share_screen.dart';
+import '../features/live_sharing/presentation/screens/receive_share_screen.dart';
+import '../features/live_sharing/presentation/screens/start_share_screen.dart';
 import '../shared/widgets/main_scaffold.dart';
 
 /// Listenable that notifies GoRouter when auth state changes
@@ -116,6 +119,23 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/fake-call',
         builder: (context, state) => const FakeCallScreen(),
+      ),
+
+      // Live location sharing
+      GoRoute(
+        path: '/live-share/start',
+        builder: (context, state) => const StartShareScreen(),
+      ),
+      GoRoute(
+        path: '/live-share/active',
+        builder: (context, state) => const ActiveShareScreen(),
+      ),
+      GoRoute(
+        path: '/live-share/view/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id'] ?? '';
+          return ReceiveShareScreen(sharingId: id);
+        },
       ),
     ],
   );

@@ -31,7 +31,10 @@ dependencies:
   # Location Services
   geolocator: ^12.0.0
   geocoding: ^3.0.0
-  google_maps_flutter: ^2.6.1
+
+  # Maps (OpenStreetMap via flutter_map — no API key, no billing)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
 
   # Networking
   dio: ^5.4.3+1
@@ -43,6 +46,14 @@ dependencies:
 
   # Sensors (Shake detection)
   sensors_plus: ^5.0.1
+
+  # Battery state (for live location sharing telemetry)
+  battery_plus: ^6.0.0
+
+  # Background location service (live sharing when app is backgrounded/locked)
+  flutter_background_service: ^5.0.10
+  disable_battery_optimization: ^1.1.1
+  device_info_plus: ^10.1.0
 
   # Permissions
   permission_handler: ^11.3.1

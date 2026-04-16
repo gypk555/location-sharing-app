@@ -49,6 +49,18 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Safety uses your location to share it with your emergency contacts and send precise SOS alerts.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Safety continues sharing your live location with your emergency contacts even when the app is closed, so help can find you during an SOS.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Safety continues sharing your live location with your emergency contacts even when the app is closed, so help can find you during an SOS.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

@@ -48,6 +48,27 @@ class AppConstants {
   static const int locationUpdateIntervalEmergencyMs = 5000;    // 5 sec - SOS mode
   static const int locationDistanceFilterMeters = 50;           // Increased from 10m
 
+  // Adaptive tracking (live location sharing)
+  // Normal tier: 15s / 25m - default while actively sharing
+  // Stationary tier: 60s / 0m - user hasn't moved much, back off
+  // Emergency tier: 5s / 0m - SOS active, maximum freshness
+  static const int liveSharingNormalDistanceFilterMeters = 25;
+  static const int liveSharingStationaryDistanceFilterMeters = 0;
+  static const int liveSharingEmergencyDistanceFilterMeters = 0;
+
+  // Tier transition thresholds
+  static const double kTierStationaryRadiusMeters = 25.0;   // max drift to be "stationary"
+  static const Duration kTierWindow = Duration(minutes: 2); // look-back window
+  static const double kTierExitMeters = 50.0;               // movement to exit stationary
+  static const Duration kTierDebounce = Duration(seconds: 30);
+
+  // Heartbeat + staleness
+  static const Duration kHeartbeatInterval = Duration(seconds: 60);
+  static const Duration kStaleThreshold = Duration(seconds: 60);
+
+  // Battery sampler cache duration (avoid calling battery_plus on every position)
+  static const Duration kBatterySampleInterval = Duration(seconds: 30);
+
   // SOS Settings
   static const int shakeThreshold = 15;
   static const int shakeCountToTrigger = 3;

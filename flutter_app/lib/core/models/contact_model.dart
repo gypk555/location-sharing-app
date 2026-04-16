@@ -37,6 +37,18 @@ class ContactModel extends HiveObject {
   @HiveField(10)
   final bool isSynced; // Whether synced to Supabase
 
+  /// Cached result of find_user_by_phone RPC: the profile.id of this
+  /// contact if they are a registered app user. Null means either
+  /// "not yet resolved" or "resolved and not registered" — distinguish
+  /// using [resolvedAt].
+  @HiveField(11)
+  final String? resolvedUserId;
+
+  /// When resolvedUserId was last checked. Null means never resolved.
+  /// Callers treat this cache as stale after 24 hours.
+  @HiveField(12)
+  final DateTime? resolvedAt;
+
   ContactModel({
     required this.id,
     required this.name,
@@ -49,7 +61,18 @@ class ContactModel extends HiveObject {
     this.userId,
     this.isPrimary = false,
     this.isSynced = false,
+    this.resolvedUserId,
+    this.resolvedAt,
   });
+
+  /// Whether this contact is a registered app user (based on cached lookup).
+  bool get isRegisteredUser => resolvedUserId != null;
+
+  /// Whether the cached [resolvedUserId] should be refreshed.
+  bool get resolutionIsStale {
+    if (resolvedAt == null) return true;
+    return DateTime.now().difference(resolvedAt!) > const Duration(hours: 24);
+  }
 
   factory ContactModel.fromJson(Map<String, dynamic> json) {
     return ContactModel(
@@ -64,6 +87,10 @@ class ContactModel extends HiveObject {
       userId: json['userId'] as String?,
       isPrimary: json['isPrimary'] as bool? ?? false,
       isSynced: json['isSynced'] as bool? ?? false,
+      resolvedUserId: json['resolvedUserId'] as String?,
+      resolvedAt: json['resolvedAt'] != null
+          ? DateTime.parse(json['resolvedAt'] as String)
+          : null,
     );
   }
 
@@ -99,6 +126,8 @@ class ContactModel extends HiveObject {
       'userId': userId,
       'isPrimary': isPrimary,
       'isSynced': isSynced,
+      'resolvedUserId': resolvedUserId,
+      'resolvedAt': resolvedAt?.toIso8601String(),
     };
   }
 
@@ -129,6 +158,9 @@ class ContactModel extends HiveObject {
     String? userId,
     bool? isPrimary,
     bool? isSynced,
+    String? resolvedUserId,
+    DateTime? resolvedAt,
+    bool clearResolution = false,
   }) {
     return ContactModel(
       id: id ?? this.id,
@@ -142,6 +174,9 @@ class ContactModel extends HiveObject {
       userId: userId ?? this.userId,
       isPrimary: isPrimary ?? this.isPrimary,
       isSynced: isSynced ?? this.isSynced,
+      resolvedUserId:
+          clearResolution ? null : (resolvedUserId ?? this.resolvedUserId),
+      resolvedAt: clearResolution ? null : (resolvedAt ?? this.resolvedAt),
     );
   }
 }

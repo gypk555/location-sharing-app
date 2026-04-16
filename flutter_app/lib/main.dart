@@ -9,6 +9,7 @@ import 'app/app.dart';
 import 'core/models/user_model.dart';
 import 'core/models/contact_model.dart';
 import 'core/models/location_model.dart';
+import 'core/services/background_service.dart';
 import 'shared/utils/logger.dart';
 
 void main() async {
@@ -57,6 +58,11 @@ void main() async {
   Hive.registerAdapter(UserModelAdapter());
   Hive.registerAdapter(ContactModelAdapter());
   Hive.registerAdapter(LocationModelAdapter());
+
+  // Configure the background location service. Safe to call even if the
+  // user never starts a live share — the service won't run until explicitly
+  // started via BackgroundService.startSharing().
+  await BackgroundService.configure();
 
   runApp(
     const ProviderScope(

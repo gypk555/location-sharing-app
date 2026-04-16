@@ -123,6 +123,10 @@ class AuthService {
       'id': user.id,
       'authProvider': user.authProvider,
       'createdAt': user.createdAt.toIso8601String(),
+      'email': user.email,
+      'phone': user.phone,
+      'name': user.name,
+      'photoUrl': user.photoUrl,
     };
   }
 

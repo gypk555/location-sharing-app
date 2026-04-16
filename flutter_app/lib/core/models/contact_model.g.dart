@@ -28,13 +28,15 @@ class ContactModelAdapter extends TypeAdapter<ContactModel> {
       userId: fields[8] as String?,
       isPrimary: fields[9] as bool,
       isSynced: fields[10] as bool,
+      resolvedUserId: fields[11] as String?,
+      resolvedAt: fields[12] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter writer, ContactModel obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -56,7 +58,11 @@ class ContactModelAdapter extends TypeAdapter<ContactModel> {
       ..writeByte(9)
       ..write(obj.isPrimary)
       ..writeByte(10)
-      ..write(obj.isSynced);
+      ..write(obj.isSynced)
+      ..writeByte(11)
+      ..write(obj.resolvedUserId)
+      ..writeByte(12)
+      ..write(obj.resolvedAt);
   }
 
   @override

@@ -28,6 +28,15 @@ class LocationModel extends HiveObject {
   @HiveField(7)
   final bool isSynced; // For offline-first sync
 
+  @HiveField(8)
+  final double? heading;
+
+  @HiveField(9)
+  final int? batteryLevel;
+
+  @HiveField(10)
+  final bool? isCharging;
+
   LocationModel({
     required this.latitude,
     required this.longitude,
@@ -37,6 +46,9 @@ class LocationModel extends HiveObject {
     this.address,
     required this.timestamp,
     this.isSynced = false,
+    this.heading,
+    this.batteryLevel,
+    this.isCharging,
   });
 
   factory LocationModel.fromJson(Map<String, dynamic> json) {
@@ -49,6 +61,9 @@ class LocationModel extends HiveObject {
       address: json['address'] as String?,
       timestamp: DateTime.parse(json['timestamp'] as String),
       isSynced: json['isSynced'] as bool? ?? false,
+      heading: (json['heading'] as num?)?.toDouble(),
+      batteryLevel: (json['batteryLevel'] as num?)?.toInt(),
+      isCharging: json['isCharging'] as bool?,
     );
   }
 
@@ -62,6 +77,9 @@ class LocationModel extends HiveObject {
       'address': address,
       'timestamp': timestamp.toIso8601String(),
       'isSynced': isSynced,
+      'heading': heading,
+      'batteryLevel': batteryLevel,
+      'isCharging': isCharging,
     };
   }
 
@@ -79,6 +97,9 @@ class LocationModel extends HiveObject {
     String? address,
     DateTime? timestamp,
     bool? isSynced,
+    double? heading,
+    int? batteryLevel,
+    bool? isCharging,
   }) {
     return LocationModel(
       latitude: latitude ?? this.latitude,
@@ -89,6 +110,9 @@ class LocationModel extends HiveObject {
       address: address ?? this.address,
       timestamp: timestamp ?? this.timestamp,
       isSynced: isSynced ?? this.isSynced,
+      heading: heading ?? this.heading,
+      batteryLevel: batteryLevel ?? this.batteryLevel,
+      isCharging: isCharging ?? this.isCharging,
     );
   }
 }

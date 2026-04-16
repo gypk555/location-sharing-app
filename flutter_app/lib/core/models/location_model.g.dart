@@ -25,13 +25,16 @@ class LocationModelAdapter extends TypeAdapter<LocationModel> {
       address: fields[5] as String?,
       timestamp: fields[6] as DateTime,
       isSynced: fields[7] as bool,
+      heading: fields[8] as double?,
+      batteryLevel: fields[9] as int?,
+      isCharging: fields[10] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, LocationModel obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.latitude)
       ..writeByte(1)
@@ -47,7 +50,13 @@ class LocationModelAdapter extends TypeAdapter<LocationModel> {
       ..writeByte(6)
       ..write(obj.timestamp)
       ..writeByte(7)
-      ..write(obj.isSynced);
+      ..write(obj.isSynced)
+      ..writeByte(8)
+      ..write(obj.heading)
+      ..writeByte(9)
+      ..write(obj.batteryLevel)
+      ..writeByte(10)
+      ..write(obj.isCharging);
   }
 
   @override

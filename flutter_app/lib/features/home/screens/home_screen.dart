@@ -12,6 +12,8 @@ import '../../../core/providers/location_provider.dart';
 import '../../../core/providers/password_breach_provider.dart';
 import '../../../core/providers/sos_provider.dart';
 import '../../../core/services/sms_service.dart';
+import '../../../core/providers/live_sharing_provider.dart';
+import '../../../features/live_sharing/providers/incoming_shares_provider.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/utils/logger.dart';
 
@@ -428,6 +430,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final authState = ref.watch(authStateProvider);
     final locationState = ref.watch(locationProvider);
     final sosState = ref.watch(sosProvider);
+    final liveSharingState = ref.watch(liveSharingProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -605,6 +608,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
             const SizedBox(height: 24),
 
+            // Incoming live shares banner (shown only when someone is
+            // sharing their live location with the current user).
+            const _IncomingSharesBanner(),
+
             // Quick actions grid
             Text(
               'Quick Actions',
@@ -644,13 +651,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   onTap: () => context.go('/contacts'),
                 ),
                 _QuickActionCard(
-                  icon: Icons.mic,
-                  title: 'Record Audio',
-                  subtitle: 'Evidence mode',
-                  color: Colors.purple,
-                  onTap: () {
-                    // Start recording
-                  },
+                  icon: Icons.share_location,
+                  title: liveSharingState.isActive
+                      ? 'Sharing live'
+                      : 'Live Location',
+                  subtitle: liveSharingState.isActive
+                      ? 'Tap to view or stop'
+                      : 'Share in real time',
+                  color: liveSharingState.isActive
+                      ? AppTheme.successColor
+                      : Colors.purple,
+                  onTap: () => context.push(
+                    liveSharingState.isActive
+                        ? '/live-share/active'
+                        : '/live-share/start',
+                  ),
                 ),
               ],
             ),
@@ -856,6 +871,82 @@ class _AppIcon extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Dismissable banner shown on the home screen when one or more registered
+/// contacts are actively sharing their live location with the current user.
+/// Tapping it opens the receiver view for the most recent share. Hidden
+/// entirely when there are no active shares, so users never see it in the
+/// default state.
+class _IncomingSharesBanner extends ConsumerWidget {
+  const _IncomingSharesBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(incomingSharesProvider);
+    return async.when(
+      data: (shares) {
+        if (shares.isEmpty) return const SizedBox.shrink();
+        final newest = shares.first;
+        final sosCount = shares.where((s) => s.isSosTriggered).length;
+        final color = sosCount > 0 ? AppTheme.errorColor : AppTheme.primaryColor;
+        final icon = sosCount > 0 ? Icons.emergency : Icons.location_on;
+        final title = sosCount > 0
+            ? '${newest.ownerName} triggered an SOS'
+            : shares.length == 1
+                ? '${newest.ownerName} is sharing live location'
+                : '${shares.length} people are sharing live location';
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Material(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => context.push('/live-share/view/${newest.sharingId}'),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: color,
+                      child: Icon(icon, color: Colors.white, size: 18),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: color,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Tap to view live map',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: color),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 }
