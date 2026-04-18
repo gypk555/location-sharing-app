@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'location_service.dart';
+import 'secure_hive.dart';
 import 'sms_service.dart';
 import '../models/contact_model.dart';
 import '../../shared/constants/app_constants.dart';
@@ -215,7 +216,7 @@ class SosService {
     }
 
     // Open new box if not already open
-    _contactsBox = await Hive.openBox<ContactModel>(AppConstants.contactsBoxName);
+    _contactsBox = await SecureHive.openBox<ContactModel>(AppConstants.contactsBoxName);
     return _contactsBox!;
   }
 

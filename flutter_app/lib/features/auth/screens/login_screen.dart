@@ -34,6 +34,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  /// Show a "coming soon" snackbar for providers that aren't wired yet.
+  void _showComingSoon(String provider) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$provider is coming soon. Please use email or phone.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   void _clearErrors() {
     setState(() {
       _phoneError = null;
@@ -317,20 +327,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
               const SizedBox(height: 24),
 
-              // Google Sign In
+              // Google Sign In — OAuth not yet wired; gated to prevent fake
+              // demo sessions that fail every RLS-protected write (H-1).
               OutlinedButton.icon(
-                onPressed: () =>
-                    ref.read(authStateProvider.notifier).signInWithGoogle(),
+                onPressed: () => _showComingSoon('Google sign-in'),
                 icon: const Icon(Icons.g_mobiledata, size: 24),
                 label: const Text('Continue with Google'),
               ),
 
               const SizedBox(height: 12),
 
-              // Apple Sign In
+              // Apple Sign In — see note above (H-1).
               OutlinedButton.icon(
-                onPressed: () =>
-                    ref.read(authStateProvider.notifier).signInWithApple(),
+                onPressed: () => _showComingSoon('Apple sign-in'),
                 icon: const Icon(Icons.apple, size: 24),
                 label: const Text('Continue with Apple'),
               ),

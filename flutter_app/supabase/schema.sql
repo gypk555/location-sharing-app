@@ -504,18 +504,31 @@ CREATE INDEX IF NOT EXISTS idx_location_sharing_access
 -- =============================================
 -- SCHEDULED JOBS (requires pg_cron extension)
 -- =============================================
--- Uncomment these after enabling pg_cron in Supabase dashboard:
---
--- -- Cleanup old locations daily at 2 AM
--- SELECT cron.schedule(
---     'cleanup-old-locations',
---     '0 2 * * *',
---     $$SELECT public.cleanup_old_locations()$$
--- );
---
--- -- Expire location shares every minute
--- SELECT cron.schedule(
---     'expire-location-shares',
---     '* * * * *',
---     $$SELECT public.expire_location_shares()$$
--- );
+-- Both jobs are registered idempotently so this file is safe to re-run.
+-- pg_cron must be enabled in Supabase dashboard (Database -> Extensions).
+-- Note: migrations/002_live_sharing.sql and migrations/003_retention_and_
+-- validation.sql also register these jobs using the same pattern, so
+-- existing deployments get them through the migration path as well.
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+        -- Cleanup old non-SOS location rows daily at 02:00 UTC (fix M-2)
+        PERFORM cron.unschedule('cleanup-old-locations')
+        WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'cleanup-old-locations');
+        PERFORM cron.schedule(
+            'cleanup-old-locations',
+            '0 2 * * *',
+            $cron$SELECT public.cleanup_old_locations();$cron$
+        );
+
+        -- Expire location shares every minute
+        PERFORM cron.unschedule('expire-location-shares')
+        WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'expire-location-shares');
+        PERFORM cron.schedule(
+            'expire-location-shares',
+            '* * * * *',
+            $cron$SELECT public.expire_location_shares();$cron$
+        );
+    END IF;
+END $$;

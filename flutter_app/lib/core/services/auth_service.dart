@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,6 +12,7 @@ import '../../shared/constants/app_constants.dart';
 import '../../shared/errors/app_errors.dart';
 import '../../shared/utils/logger.dart';
 import '../../shared/utils/validators.dart';
+import 'secure_hive.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -19,6 +21,13 @@ class AuthService {
 
   final _uuid = const Uuid();
   UserModel? _currentUser;
+
+  /// OS-backed storage for the cached-user JSON blob used on the splash
+  /// fast-path. Replaces the previous SharedPreferences-backed cache which
+  /// stored identity in plaintext on disk (security fix H-2).
+  static const _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
 
   /// Demo mode OTP attempt tracking (security: prevent brute force)
   final Map<String, int> _demoOtpAttempts = {};
@@ -35,7 +44,7 @@ class AuthService {
   /// Get cached user box (performance: avoid reopening on every operation)
   Future<Box<UserModel>> get _box async {
     if (_userBox == null || !_userBox!.isOpen) {
-      _userBox = await Hive.openBox<UserModel>(AppConstants.userBoxName);
+      _userBox = await SecureHive.openBox<UserModel>(AppConstants.userBoxName);
     }
     return _userBox!;
   }
@@ -59,8 +68,11 @@ class AuthService {
 
   Future<UserModel?> loadCachedUserFast() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(AppConstants.cachedUserKey);
+      // Migrate the legacy plaintext blob from SharedPreferences to secure
+      // storage on first launch after the H-2 upgrade, then remove it.
+      await _migrateLegacyCachedUser();
+
+      final raw = await _secureStorage.read(key: AppConstants.cachedUserKey);
       if (raw == null || raw.isEmpty) return null;
       final json = jsonDecode(raw) as Map<String, dynamic>;
       _currentUser = UserModel(
@@ -76,6 +88,29 @@ class AuthService {
     } catch (e) {
       AppLogger.error('Error loading cached user', e);
       return null;
+    }
+  }
+
+  /// One-shot migration: old builds stored the cached user JSON in plaintext
+  /// SharedPreferences. Copy any legacy blob into secure storage, then delete
+  /// it. Idempotent — safe to call repeatedly.
+  Future<void> _migrateLegacyCachedUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final legacy = prefs.getString(AppConstants.cachedUserKey);
+      if (legacy == null || legacy.isEmpty) return;
+
+      final alreadyInSecure =
+          await _secureStorage.read(key: AppConstants.cachedUserKey);
+      if (alreadyInSecure == null || alreadyInSecure.isEmpty) {
+        await _secureStorage.write(
+          key: AppConstants.cachedUserKey,
+          value: legacy,
+        );
+      }
+      await prefs.remove(AppConstants.cachedUserKey);
+    } catch (e) {
+      AppLogger.error('Error migrating legacy cached user', e);
     }
   }
 
@@ -99,10 +134,9 @@ class AuthService {
 
   Future<void> _saveUserToPrefs(UserModel user) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        AppConstants.cachedUserKey,
-        jsonEncode(_minimalUserJson(user)),
+      await _secureStorage.write(
+        key: AppConstants.cachedUserKey,
+        value: jsonEncode(_minimalUserJson(user)),
       );
     } catch (e) {
       AppLogger.error('Error saving cached user', e);
@@ -111,6 +145,8 @@ class AuthService {
 
   Future<void> _clearCachedUser() async {
     try {
+      await _secureStorage.delete(key: AppConstants.cachedUserKey);
+      // Also wipe any lingering plaintext blob from pre-H-2 installs.
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(AppConstants.cachedUserKey);
     } catch (e) {
@@ -346,34 +382,22 @@ class AuthService {
     return user;
   }
 
-  // Google Sign In (placeholder - requires google_sign_in setup)
+  // Google / Apple Sign In are not yet wired to real OAuth.
+  // The previous placeholder implementations silently minted fake "demo" users
+  // that never reached Supabase, so every authenticated write failed RLS. They
+  // now throw so any stray caller produces a loud, debuggable failure instead
+  // of a broken session (security fix H-1). The UI gates the buttons behind a
+  // "Coming soon" message — wire real OAuth here before re-enabling them.
   Future<UserModel> signInWithGoogle() async {
-    // Demo mode for now
-    final user = UserModel(
-      id: 'demo-google-${_uuid.v4()}',
-      email: 'demo@gmail.com',
-      name: 'Demo User',
-      authProvider: 'google',
-      createdAt: DateTime.now(),
+    throw UnimplementedError(
+      'Google sign-in is not yet available. Please sign in with email or phone.',
     );
-
-    await _saveUser(user);
-    return user;
   }
 
-  // Apple Sign In (placeholder - requires sign_in_with_apple setup)
   Future<UserModel> signInWithApple() async {
-    // Demo mode for now
-    final user = UserModel(
-      id: 'demo-apple-${_uuid.v4()}',
-      email: 'demo@icloud.com',
-      name: 'Demo User',
-      authProvider: 'apple',
-      createdAt: DateTime.now(),
+    throw UnimplementedError(
+      'Apple sign-in is not yet available. Please sign in with email or phone.',
     );
-
-    await _saveUser(user);
-    return user;
   }
 
   Future<void> signOut() async {
@@ -403,9 +427,9 @@ class AuthService {
     try {
       // Open all boxes in parallel for performance
       final futures = await Future.wait([
-        Hive.openBox<UserModel>(AppConstants.userBoxName),
-        Hive.openBox<ContactModel>(AppConstants.contactsBoxName),
-        Hive.openBox<LocationModel>(AppConstants.locationBoxName),
+        SecureHive.openBox<UserModel>(AppConstants.userBoxName),
+        SecureHive.openBox<ContactModel>(AppConstants.contactsBoxName),
+        SecureHive.openBox<LocationModel>(AppConstants.locationBoxName),
       ]);
 
       final userBox = futures[0] as Box<UserModel>;

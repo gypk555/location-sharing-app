@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/routes.dart';
 import '../../core/providers/live_sharing_provider.dart';
 
 class MainScaffold extends ConsumerStatefulWidget {
@@ -54,15 +55,15 @@ class _MainScaffoldState extends ConsumerState<MainScaffold>
   }
 
   int _getCurrentIndex(String location) {
-    if (location.startsWith('/sos')) return 1;
-    if (location.startsWith('/contacts')) return 2;
-    if (location.startsWith('/settings')) return 3;
+    if (location.startsWith(AppRoutes.sos)) return 1;
+    if (location.startsWith(AppRoutes.contacts)) return 2;
+    if (location.startsWith(AppRoutes.settings)) return 3;
     return 0;
   }
 
   void _handlePop(String location) {
-    if (location != '/') {
-      context.go('/');
+    if (location != AppRoutes.home) {
+      context.go(AppRoutes.home);
       return;
     }
     final now = DateTime.now();
@@ -86,10 +87,10 @@ class _MainScaffoldState extends ConsumerState<MainScaffold>
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
     final currentIndex = _getCurrentIndex(location);
-    final isTabRoot = location == '/'
-        || location == '/sos'
-        || location == '/contacts'
-        || location == '/settings';
+    final isTabRoot = location == AppRoutes.home
+        || location == AppRoutes.sos
+        || location == AppRoutes.contacts
+        || location == AppRoutes.settings;
 
     return PopScope(
       canPop: !isTabRoot,
@@ -104,16 +105,16 @@ class _MainScaffoldState extends ConsumerState<MainScaffold>
           onDestinationSelected: (index) {
             switch (index) {
               case 0:
-                context.go('/');
+                context.go(AppRoutes.home);
                 break;
               case 1:
-                context.go('/sos');
+                context.go(AppRoutes.sos);
                 break;
               case 2:
-                context.go('/contacts');
+                context.go(AppRoutes.contacts);
                 break;
               case 3:
-                context.go('/settings');
+                context.go(AppRoutes.settings);
                 break;
             }
           },

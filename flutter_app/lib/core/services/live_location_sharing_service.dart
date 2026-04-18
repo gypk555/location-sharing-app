@@ -155,7 +155,10 @@ class LiveLocationSharingService {
       if (result == null) return null;
       return result.toString();
     } catch (e) {
-      AppLogger.error('find_user_by_phone failed for $phone', e);
+      // Do not log the phone number itself — this runs on failure paths
+      // that can end up in Sentry/Crashlytics breadcrumbs, and PII in
+      // logs is a DPDP Act 2023 concern.
+      AppLogger.error('find_user_by_phone failed', e);
       return null;
     }
   }
@@ -372,14 +375,30 @@ class LiveLocationSharingService {
       return StartShareOutcome.fail(DatabaseFailure(e.code, e.message));
     } catch (e, stack) {
       AppLogger.error('live-sharing: unknown insert failure', e, stack);
-      return StartShareOutcome.fail(UnknownFailure(e.toString()));
+      // Do NOT surface e.toString() into the failure object — the
+      // message field is consumed by the UI and raw exception strings
+      // can leak internal details. _messageForFailure returns a generic
+      // string for UnknownFailure regardless, so we pass an empty one.
+      return StartShareOutcome.fail(const UnknownFailure(''));
     }
 
-    // 5. Build typed recipients with public URLs.
+    // 5. Build typed recipients with public URLs. Postgres does not
+    // guarantee that INSERT … RETURNING preserves input order, so we
+    // cannot assume inserted[i] corresponds to contacts[i]. Build a
+    // lookup keyed by the unique identity of each target (resolved
+    // user_id if any, otherwise the phone) from the pre-insert rows
+    // where the contacts[i] pairing is still valid, then match back.
+    String rowKey(Map<String, dynamic> row) =>
+        (row['shared_with_id'] as String?) ??
+        (row['shared_with_phone'] as String? ?? '');
+    final contactByKey = <String, ContactModel>{};
+    for (var i = 0; i < rows.length; i++) {
+      contactByKey[rowKey(rows[i])] = contacts[i];
+    }
     final recipients = <SharedRecipient>[];
-    for (var i = 0; i < inserted.length; i++) {
-      final row = inserted[i];
-      final contact = contacts[i];
+    for (final row in inserted) {
+      final contact = contactByKey[rowKey(row)];
+      if (contact == null) continue; // Unexpected extra row; skip defensively.
       final token = row['share_token'] as String;
       recipients.add(SharedRecipient(
         sharingRowId: row['id'] as String,
@@ -457,7 +476,12 @@ class LiveLocationSharingService {
   }
 
   /// Stop a single recipient without affecting others in the same session.
+  /// Scoped to the caller via owner_id to prevent any authenticated user
+  /// from revoking another user's share (defense-in-depth; RLS should also
+  /// enforce this server-side).
   Future<void> stopRecipient(String sharingRowId) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
     try {
       await _supabase
           .from('location_sharing')
@@ -465,21 +489,26 @@ class LiveLocationSharingService {
             'is_active': false,
             'revoked_at': DateTime.now().toUtc().toIso8601String(),
           })
-          .eq('id', sharingRowId);
+          .eq('id', sharingRowId)
+          .eq('owner_id', user.id);
     } catch (e) {
       AppLogger.error('stopRecipient failed', e);
     }
   }
 
   /// Fetch the current user's active share sessions (one row per recipient).
-  /// Caller can group by session_group_id for UI rendering.
+  /// Caller can group by session_group_id for UI rendering. Explicit
+  /// column list avoids over-fetching the whole row (constraints, etc.)
+  /// and ensures only fields hydrateFromServer actually consumes are
+  /// pulled across the wire.
   Future<List<Map<String, dynamic>>> activeSessions() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return const [];
     try {
       final rows = await _supabase
           .from('location_sharing')
-          .select()
+          .select(
+              'id,session_group_id,share_token,shared_with_id,shared_with_phone,shared_with_name,trigger_source,expires_at,created_at')
           .eq('owner_id', user.id)
           .eq('is_active', true)
           .order('created_at', ascending: false);

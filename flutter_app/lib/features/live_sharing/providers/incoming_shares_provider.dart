@@ -78,21 +78,48 @@ final incomingSharesProvider =
               .toList(),
         );
       }
-    } catch (_) {
-      if (!controller.isClosed) controller.add(const <IncomingShare>[]);
+    } catch (e, stack) {
+      // Propagate errors so the UI can distinguish "network down" from
+      // "no active shares" — the StreamProvider's .when(error:) will
+      // render an appropriate state. StateError from a closed controller
+      // is harmless here (provider was disposed).
+      if (!controller.isClosed) {
+        try {
+          controller.addError(e, stack);
+        } on StateError {
+          // Controller closed between the check and the add — ignore.
+        }
+      }
     }
   }
 
   // Kick off the initial snapshot.
   pushLatest();
 
-  // Realtime subscription: re-query on any change to location_sharing.
+  // Realtime subscription: re-query on any change to location_sharing
+  // that targets the current user. Without this filter every sharer's
+  // heartbeat UPDATE (from every user in the system) would wake every
+  // recipient client and trigger a redundant SELECT — unnecessary
+  // load at scale and a minor metadata leak if Realtime RLS is ever
+  // misconfigured in the Supabase dashboard.
+  //
+  // NOTE: `shared_with_id` is NULL for contacts who aren't registered
+  // Supabase users (they receive an SMS link to the public web
+  // receiver instead). Those rows intentionally never match this
+  // filter — the in-app incoming-shares UI only applies to registered
+  // recipients. Do NOT add a shared_with_phone OR-branch without
+  // re-evaluating the receiver flow end-to-end.
   final channel = client
       .channel('incoming_shares_$userId')
       .onPostgresChanges(
         event: PostgresChangeEvent.all,
         schema: 'public',
         table: 'location_sharing',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'shared_with_id',
+          value: userId,
+        ),
         callback: (_) => pushLatest(),
       )
       .subscribe();

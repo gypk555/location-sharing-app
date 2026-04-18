@@ -28,6 +28,9 @@ dependencies:
   hive_flutter: ^1.1.0
   shared_preferences: ^2.2.3
 
+  # Secure Storage (OS keychain / keystore — used for the Hive encryption key)
+  flutter_secure_storage: ^9.2.2
+
   # Location Services
   geolocator: ^12.0.0
   geocoding: ^3.0.0

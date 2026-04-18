@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import '../services/secure_hive.dart';
 import '../services/sos_service.dart';
 import '../models/contact_model.dart';
 import '../../shared/constants/app_constants.dart';
@@ -92,7 +93,7 @@ class SosNotifier extends StateNotifier<SosState> {
       // Check if box is already open to avoid reopening
       final box = Hive.isBoxOpen(AppConstants.contactsBoxName)
           ? Hive.box<ContactModel>(AppConstants.contactsBoxName)
-          : await Hive.openBox<ContactModel>(AppConstants.contactsBoxName);
+          : await SecureHive.openBox<ContactModel>(AppConstants.contactsBoxName);
       final count = box.values.where((c) => c.isSosContact).length;
 
       // Check if notifier is still mounted before updating state

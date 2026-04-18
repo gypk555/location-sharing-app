@@ -8,11 +8,19 @@ class AppConstants {
   static const String appName = 'SafetyApp';
   static const String appVersion = '1.0.0';
 
-  // Default API endpoints (fallback if not configured in .env)
+  // Default API endpoints (fallback if not configured in .env).
+  //
+  // The release fallback deliberately points at a non-resolvable host
+  // (`api.invalid` is reserved by RFC 2606). A prior version used
+  // `api.safetyapp.com`, a domain the organisation does not own — a
+  // release build shipped without .env would have silently connected
+  // there, making MITM trivial for whoever registers it (security fix
+  // L-6). Release builds now hard-fail in main.dart when .env is
+  // missing, but this value is retained as defense-in-depth.
   static const String _defaultDevApiUrl = 'http://10.0.2.2:3001';
   static const String _defaultDevWsUrl = 'ws://10.0.2.2:3001';
-  static const String _defaultProdApiUrl = 'https://api.safetyapp.com';
-  static const String _defaultProdWsUrl = 'wss://api.safetyapp.com';
+  static const String _defaultProdApiUrl = 'https://api.invalid';
+  static const String _defaultProdWsUrl = 'wss://api.invalid';
 
   // API Endpoints (Elysia Backend)
   // Load from .env file for security and flexibility
@@ -44,16 +52,16 @@ class AppConstants {
   // Location Settings
   // Use different intervals based on mode for battery efficiency
   static const int locationUpdateIntervalNormalMs = 60000;      // 1 min - normal mode
-  static const int locationUpdateIntervalSharingMs = 15000;     // 15 sec - active sharing
+  static const int locationUpdateIntervalSharingMs = 30000;     // 30 sec - active sharing
   static const int locationUpdateIntervalEmergencyMs = 5000;    // 5 sec - SOS mode
   static const int locationDistanceFilterMeters = 50;           // Increased from 10m
 
   // Adaptive tracking (live location sharing)
-  // Normal tier: 15s / 25m - default while actively sharing
-  // Stationary tier: 60s / 0m - user hasn't moved much, back off
+  // Normal tier: 30s / 25m - default while actively sharing (balanced accuracy)
+  // Stationary tier: 60s / 50m - user hasn't moved much, back off aggressively
   // Emergency tier: 5s / 0m - SOS active, maximum freshness
   static const int liveSharingNormalDistanceFilterMeters = 25;
-  static const int liveSharingStationaryDistanceFilterMeters = 0;
+  static const int liveSharingStationaryDistanceFilterMeters = 50;
   static const int liveSharingEmergencyDistanceFilterMeters = 0;
 
   // Tier transition thresholds

@@ -9,6 +9,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/contact_model.dart';
 import '../services/contacts_backup_service.dart';
+import '../services/contacts_sync_manager.dart';
+import '../services/secure_hive.dart';
 import '../../shared/constants/app_constants.dart';
 import '../../shared/errors/app_errors.dart';
 import '../../shared/utils/logger.dart';
@@ -114,11 +116,10 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   /// Timeout for sync operations (20 seconds - more forgiving for rural areas)
   static const _syncTimeout = Duration(seconds: 20);
 
-  /// Timeout for connectivity check
-  static const _connectivityTimeout = Duration(seconds: 3);
-
-  /// Maximum contacts per batch for Supabase bulk operations
-  static const _batchSize = 50;
+  /// All Supabase-specific push/pull/delete/retry calls go through this
+  /// manager (code-review finding §3.2). The notifier keeps only Hive
+  /// persistence + state + debouncing + validation.
+  final ContactsSyncManager _syncManager = ContactsSyncManager();
 
   /// Cached Hive box to avoid repeated opens (performance optimization)
   Box<ContactModel>? _contactsBox;
@@ -163,7 +164,7 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   /// Get cached Hive box (performance: avoid reopening on every operation)
   Future<Box<ContactModel>> get _box async {
     if (_contactsBox == null || !_contactsBox!.isOpen) {
-      _contactsBox = await Hive.openBox<ContactModel>(AppConstants.contactsBoxName);
+      _contactsBox = await SecureHive.openBox<ContactModel>(AppConstants.contactsBoxName);
     }
     return _contactsBox!;
   }
@@ -202,7 +203,7 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   /// Initialize connectivity stream listener
   void _initConnectivityListener() {
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
+    _connectivitySubscription = _syncManager.onConnectivityChanged().listen(
       (results) {
         // Don't process if disposed (prevents callbacks after disposal)
         if (_disposed) return;
@@ -246,21 +247,9 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
     if (_connectivitySubscription != null) {
       return _isConnected;
     }
-
-    // Fallback to direct check with timeout
-    try {
-      final connectivityResult = await Connectivity()
-          .checkConnectivity()
-          .timeout(_connectivityTimeout);
-      _isConnected = !connectivityResult.contains(ConnectivityResult.none);
-      return _isConnected;
-    } on TimeoutException catch (_) {
-      AppLogger.warning('Connectivity check timed out');
-      return true; // Assume online if check times out
-    } catch (e) {
-      AppLogger.warning('Could not check connectivity');
-      return true; // Assume online if check fails
-    }
+    // Fallback to sync manager's timed probe (returns true on timeout).
+    _isConnected = await _syncManager.isOnline();
+    return _isConnected;
   }
 
   /// Secure random generator for jitter (security: prevents predictable timing)
@@ -375,55 +364,20 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   /// Push unsynced local contacts to Supabase before pulling (batch operation)
   Future<void> _pushUnsyncedToSupabase(List<ContactModel> localContacts) async {
-    if (_supabase == null || _currentUserId == null) return;
-
-    final unsyncedContacts = localContacts.where((c) => !c.isSynced).toList();
-    if (unsyncedContacts.isEmpty) return;
-
-    // Batch insert for better performance (fewer HTTP requests = less battery drain)
-    // Process in chunks to avoid payload size limits
-    for (var i = 0; i < unsyncedContacts.length; i += _batchSize) {
-      final batch = unsyncedContacts.skip(i).take(_batchSize).toList();
-      final batchData = batch.map((c) => c.toSupabase(_currentUserId!)).toList();
-
-      try {
-        // Use upsert to handle both new and existing contacts
-        await _supabase!
-            .from('emergency_contacts')
-            .upsert(batchData, onConflict: 'id');
-        AppLogger.info('Batch pushed ${batch.length} contacts');
-      } catch (e) {
-        // Fallback to individual inserts if batch fails
-        AppLogger.warning('Batch push failed, falling back to individual inserts');
-        for (final contact in batch) {
-          try {
-            await _supabase!
-                .from('emergency_contacts')
-                .upsert(contact.toSupabase(_currentUserId!), onConflict: 'id');
-          } catch (e) {
-            AppLogger.warning('Could not push contact ${contact.id}');
-          }
-        }
-      }
-    }
+    final userId = _currentUserId;
+    if (userId == null) return;
+    final unsynced = localContacts.where((c) => !c.isSynced).toList();
+    await _syncManager.pushUnsyncedBatch(userId: userId, unsynced: unsynced);
   }
 
   /// Sync contacts from Supabase to local storage (merge, not replace)
   /// Uses mutex to prevent race conditions during box clear/repopulate
   Future<void> _syncFromSupabase() async {
-    if (_supabase == null || _currentUserId == null) return;
-
+    final userId = _currentUserId;
+    if (userId == null) return;
     try {
-      final response = await _supabase!
-          .from('emergency_contacts')
-          .select()
-          .eq('user_id', _currentUserId!);
-
-      // Supabase returns List<Map<String, dynamic>> - filter to ensure type safety
-      final supabaseContacts = response
-          .whereType<Map<String, dynamic>>()
-          .map((json) => ContactModel.fromSupabase(json))
-          .toList();
+      final pull = await _syncManager.fetchRemote(userId: userId);
+      final remote = pull.remoteContacts;
 
       // Use mutex to protect critical Hive operations (prevents race conditions)
       final mergedContacts = await _withHiveLock(() async {
@@ -431,29 +385,28 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
         final localContacts = box.values.toList();
 
         // Find local-only contacts (not in Supabase, failed to sync)
-        final supabaseIds = supabaseContacts.map((c) => c.id).toSet();
-        final localOnlyContacts = localContacts
-            .where((c) => !c.isSynced && !supabaseIds.contains(c.id))
+        final remoteIds = remote.map((c) => c.id).toSet();
+        final localOnly = localContacts
+            .where((c) => !c.isSynced && !remoteIds.contains(c.id))
             .toList();
 
         // Merge: Supabase contacts + local-only contacts
-        final merged = [...supabaseContacts, ...localOnlyContacts];
+        final merged = [...remote, ...localOnly];
 
         // Save merged contacts to local storage (atomic operation with mutex)
         await box.clear();
         for (final contact in merged) {
           await box.add(contact);
         }
-
         return merged;
       });
 
       state = state.copyWith(contacts: mergedContacts);
       AppLogger.info(
-          'Synced ${supabaseContacts.length} from Supabase, kept ${mergedContacts.length - supabaseContacts.length} local-only');
-    } catch (e) {
-      AppLogger.error('Error syncing from Supabase', e);
-      // Keep local contacts if sync fails
+          'Synced ${remote.length} from Supabase, kept ${mergedContacts.length - remote.length} local-only');
+    } catch (_) {
+      // Error already logged inside _syncManager.fetchRemote. Keep local
+      // contacts if the pull failed (offline-first).
     }
   }
 
@@ -646,35 +599,20 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   }
 
   Future<void> _syncContactToSupabase(ContactModel contact, {bool isNew = true}) async {
-    if (_supabase == null || _currentUserId == null) {
-      AppLogger.warning('Cannot sync to Supabase: not logged in');
-      return;
-    }
-
-    try {
-      final data = contact.toSupabase(_currentUserId!);
-
-      if (isNew) {
-        // For new contacts, use insert
-        await _supabase!.from('emergency_contacts').insert(data);
-      } else {
-        // For existing contacts, use update
-        await _supabase!
-            .from('emergency_contacts')
-            .update(data)
-            .eq('id', contact.id)
-            .eq('user_id', _currentUserId!);
-      }
-
-      // Mark as synced
-      final synced = contact.copyWith(isSynced: true, userId: _currentUserId);
+    final userId = _currentUserId;
+    if (userId == null) return;
+    final outcome = await _syncManager.pushOne(
+      userId: userId,
+      contact: contact,
+      isNew: isNew,
+    );
+    if (outcome == PushOutcome.success) {
+      // Mark as synced in local storage so the next sync cycle skips it.
+      final synced = contact.copyWith(isSynced: true, userId: userId);
       await _updateLocalContact(synced);
-      // Security: Log ID only, never PII
-      AppLogger.info('Contact synced to Supabase: ${contact.id}');
-    } catch (e) {
-      AppLogger.error('Error syncing contact to Supabase', e);
-      // Contact remains unsynced, will retry later
     }
+    // On failure the contact remains unsynced — it'll be picked up by the
+    // next background sync cycle.
   }
 
   Future<void> _updateLocalContact(ContactModel contact) async {
@@ -850,46 +788,26 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   /// Returns true if successfully deleted from Supabase
   Future<bool> _deleteFromSupabase(String id) async {
-    if (_supabase == null || _currentUserId == null) {
-      AppLogger.warning('Cannot delete from Supabase: not logged in');
-      return false;
-    }
-
-    try {
-      await _supabase!
-          .from('emergency_contacts')
-          .delete()
-          .eq('id', id)
-          .eq('user_id', _currentUserId!);
-      AppLogger.info('Contact deleted from Supabase: $id');
-      return true;
-    } catch (e) {
-      AppLogger.error('Error deleting from Supabase', e);
-      return false;
-    }
+    final userId = _currentUserId;
+    if (userId == null) return false;
+    return _syncManager.deleteOne(userId: userId, contactId: id);
   }
 
   /// Retry pending delete operations
   Future<void> retryPendingDeletes() async {
-    if (_supabase == null || _currentUserId == null) return;
+    final userId = _currentUserId;
+    if (userId == null) return;
     if (state.pendingDeletes.isEmpty) return;
 
-    final successfulDeletes = <String>[];
+    final successful = await _syncManager.retryPendingDeletes(
+      userId: userId,
+      pendingIds: state.pendingDeletes,
+    );
+    if (successful.isEmpty) return;
 
-    for (final id in state.pendingDeletes) {
-      final deleted = await _deleteFromSupabase(id);
-      if (deleted) {
-        successfulDeletes.add(id);
-      }
-    }
-
-    if (successfulDeletes.isNotEmpty) {
-      final remainingDeletes = state.pendingDeletes
-          .where((id) => !successfulDeletes.contains(id))
-          .toList();
-      state = state.copyWith(pendingDeletes: remainingDeletes);
-      AppLogger.info('Retried ${successfulDeletes.length} pending deletes');
-    }
+    final remaining =
+        state.pendingDeletes.where((id) => !successful.contains(id)).toList();
+    state = state.copyWith(pendingDeletes: remaining);
   }
 
   /// Debounce duration for toggle operations (prevents rapid sync calls)

@@ -41,9 +41,11 @@ class _ReceiveShareScreenState extends ConsumerState<ReceiveShareScreen> {
   void initState() {
     super.initState();
     _bootstrap();
-    // Refresh "last updated" display every second.
+    // Refresh the "last updated X ago" display and staleness badge.
+    // 5s is a pragmatic balance — previously 1s caused ~3,600 full
+    // rebuilds per hour for a label that only needs coarse refresh.
     _uiTicker = Timer.periodic(
-      const Duration(seconds: 1),
+      const Duration(seconds: 5),
       (_) => mounted ? setState(() {}) : null,
     );
   }
@@ -60,17 +62,35 @@ class _ReceiveShareScreenState extends ConsumerState<ReceiveShareScreen> {
   Future<void> _bootstrap() async {
     final client = Supabase.instance.client;
     try {
+      // Explicit column list: avoid pulling back columns we don't render
+      // (shared_with_phone etc.) — PII hygiene if RLS is ever misconfigured.
       final row = await client
           .from('location_sharing')
-          .select()
+          .select('id,owner_id,is_active,revoked_at,trigger_source')
           .eq('id', widget.sharingId)
           .maybeSingle();
+      if (!mounted) return;
       if (row == null) {
         setState(() => _ended = true);
         return;
       }
       final ownerId = row['owner_id'] as String;
-      _ownerName = (row['shared_with_name'] as String?) ?? 'Contact';
+      // Fetch the sharer's display name from their profile. Isolated in
+      // its own try/catch so a profile fetch failure (RLS denial, missing
+      // row, transient error) falls back to a generic label rather than
+      // collapsing the whole share into "Share ended".
+      try {
+        final ownerProfile = await client
+            .from('profiles')
+            .select('name')
+            .eq('id', ownerId)
+            .maybeSingle();
+        if (!mounted) return;
+        _ownerName = (ownerProfile?['name'] as String?) ?? 'Contact';
+      } catch (_) {
+        if (!mounted) return;
+        _ownerName = 'Contact';
+      }
       _isSos = (row['trigger_source'] as String?) == 'sos';
       if (row['is_active'] != true || row['revoked_at'] != null) {
         setState(() => _ended = true);
@@ -78,14 +98,18 @@ class _ReceiveShareScreenState extends ConsumerState<ReceiveShareScreen> {
       }
 
       // Fetch the most recent known position so we don't start on a
-      // blank map while waiting for the next realtime event.
+      // blank map while waiting for the next realtime event. Explicitly
+      // omit `address` — the geocoded street address is a potential
+      // doxxing vector (home / shelter) and the UI renders coordinates
+      // only.
       final latest = await client
           .from('location_history')
-          .select()
+          .select('latitude,longitude,accuracy,heading,speed,created_at')
           .eq('user_id', ownerId)
           .order('created_at', ascending: false)
           .limit(1)
           .maybeSingle();
+      if (!mounted) return;
       if (latest != null) {
         setState(() => _latestLocation = latest);
       } else {
@@ -245,10 +269,11 @@ class _DetailsPanel extends StatelessWidget {
               ),
             ),
           if (loc != null) ...[
+            // Coordinates only — the reverse-geocoded address is not
+            // displayed to receivers (see _bootstrap comment for why).
             _row(
               Icons.location_on,
-              loc['address'] as String? ??
-                  '${(loc['latitude'] as num).toStringAsFixed(5)}, ${(loc['longitude'] as num).toStringAsFixed(5)}',
+              '${(loc['latitude'] as num).toStringAsFixed(5)}, ${(loc['longitude'] as num).toStringAsFixed(5)}',
             ),
             const SizedBox(height: 6),
             _row(

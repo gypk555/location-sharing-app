@@ -167,68 +167,100 @@ class _SosButton extends StatelessWidget {
         status == SosStatus.triggered ||
         status == SosStatus.sending;
 
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 200,
-        height: 200,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isActive ? AppTheme.sosButtonPressedColor : AppTheme.sosButtonColor,
-          boxShadow: [
-            BoxShadow(
-              color: AppTheme.sosButtonColor.withValues(alpha: 0.4),
-              blurRadius: isActive ? 30 : 20,
-              spreadRadius: isActive ? 10 : 5,
-            ),
-          ],
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (status == SosStatus.countdown)
-                Text(
-                  '$countdown',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 64,
-                    fontWeight: FontWeight.bold,
-                  ),
-                )
-              else if (status == SosStatus.sending || status == SosStatus.triggered)
-                const SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 4,
-                  ),
-                )
-              else if (status == SosStatus.sent)
-                const Icon(
-                  Icons.check,
-                  color: Colors.white,
-                  size: 64,
-                )
-              else if (status == SosStatus.failed)
-                const Icon(
-                  Icons.error_outline,
-                  color: Colors.white,
-                  size: 64,
-                )
-              else
-                const Text(
-                  'SOS',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+    // Accessibility: screen-reader users rely on a button announcement
+    // with clear tap/long-press semantics. Without this, TalkBack/VoiceOver
+    // announce only "button" which is useless in an emergency
+    // (code-review finding §7.1).
+    final semanticsLabel = switch (status) {
+      SosStatus.idle => 'SOS emergency button',
+      SosStatus.countdown => 'SOS countdown, $countdown seconds remaining',
+      SosStatus.triggered => 'SOS triggered, getting your location',
+      SosStatus.sending => 'Sending SOS alerts',
+      SosStatus.sent => 'SOS alerts sent',
+      SosStatus.partiallySent => 'SOS alerts partially sent',
+      SosStatus.failed => 'SOS failed to send',
+    };
+    final tapHint = status == SosStatus.idle
+        ? 'start a 5-second countdown'
+        : status == SosStatus.countdown
+            ? 'cancel the countdown'
+            : null;
+
+    return Semantics(
+      button: true,
+      enabled: true,
+      label: semanticsLabel,
+      hint: status == SosStatus.idle
+          ? 'Double tap to start a 5-second countdown. '
+              'Long press to send an SOS immediately to your emergency contacts.'
+          : null,
+      onTapHint: tapHint,
+      onLongPressHint: status == SosStatus.idle
+          ? 'send SOS immediately'
+          : null,
+      child: GestureDetector(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 200,
+          height: 200,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isActive ? AppTheme.sosButtonPressedColor : AppTheme.sosButtonColor,
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.sosButtonColor.withValues(alpha: 0.4),
+                blurRadius: isActive ? 30 : 20,
+                spreadRadius: isActive ? 10 : 5,
+              ),
             ],
+          ),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (status == SosStatus.countdown)
+                  Text(
+                    '$countdown',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 64,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  )
+                else if (status == SosStatus.sending || status == SosStatus.triggered)
+                  const SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 4,
+                    ),
+                  )
+                else if (status == SosStatus.sent)
+                  const Icon(
+                    Icons.check,
+                    color: Colors.white,
+                    size: 64,
+                  )
+                else if (status == SosStatus.failed)
+                  const Icon(
+                    Icons.error_outline,
+                    color: Colors.white,
+                    size: 64,
+                  )
+                else
+                  const Text(
+                    'SOS',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 48,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

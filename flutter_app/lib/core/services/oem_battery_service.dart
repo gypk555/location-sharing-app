@@ -31,7 +31,10 @@ class OemBatteryService {
     'oneplus',
   };
 
-  final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
+  // Shared across all OemBatteryService instances — the plugin holds a
+  // platform channel and has no dispose, so creating one per instance
+  // leaks native-side resources.
+  static final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
 
   /// Returns true if the device is on an aggressive-kill OEM.
   Future<bool> isAggressiveOem() async {

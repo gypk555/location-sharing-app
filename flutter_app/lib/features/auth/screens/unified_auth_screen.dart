@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/routes.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/password_breach_provider.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -209,7 +210,7 @@ class _UnifiedAuthScreenState extends ConsumerState<UnifiedAuthScreen> {
     await ref.read(authStateProvider.notifier).sendPhoneOtp(normalizedPhone);
     if (mounted) {
       _lastOtpSentTime = DateTime.now();
-      context.push('/otp', extra: normalizedPhone);
+      context.push(AppRoutes.otp, extra: normalizedPhone);
     }
   }
 
@@ -289,7 +290,7 @@ class _UnifiedAuthScreenState extends ConsumerState<UnifiedAuthScreen> {
 
     final authState = ref.read(authStateProvider);
     if (authState.isAuthenticated) {
-      context.go('/');
+      context.go(AppRoutes.home);
     }
   }
 
@@ -745,6 +746,16 @@ class _UnifiedAuthScreenState extends ConsumerState<UnifiedAuthScreen> {
     );
   }
 
+  /// Show a "coming soon" snackbar for providers that aren't wired yet.
+  void _showComingSoon(String provider) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$provider is coming soon. Please use email or phone.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   /// Build social login section
   Widget _buildSocialLogin(AuthState authState) {
     return Column(
@@ -765,22 +776,23 @@ class _UnifiedAuthScreenState extends ConsumerState<UnifiedAuthScreen> {
 
         const SizedBox(height: 24),
 
-        // Google Sign In
+        // Google Sign In — OAuth not yet wired; gated to prevent creating
+        // fake demo sessions that fail every RLS-protected write (H-1).
         OutlinedButton.icon(
           onPressed: authState.isLoading
               ? null
-              : () => ref.read(authStateProvider.notifier).signInWithGoogle(),
+              : () => _showComingSoon('Google sign-in'),
           icon: const Icon(Icons.g_mobiledata, size: 24),
           label: const Text('Continue with Google'),
         ),
 
         const SizedBox(height: 12),
 
-        // Apple Sign In
+        // Apple Sign In — see note above (H-1).
         OutlinedButton.icon(
           onPressed: authState.isLoading
               ? null
-              : () => ref.read(authStateProvider.notifier).signInWithApple(),
+              : () => _showComingSoon('Apple sign-in'),
           icon: const Icon(Icons.apple, size: 24),
           label: const Text('Continue with Apple'),
         ),

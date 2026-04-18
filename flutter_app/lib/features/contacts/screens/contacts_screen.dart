@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/routes.dart';
 import '../../../core/providers/contacts_provider.dart';
 import '../../../core/models/contact_model.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -37,13 +38,13 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () => context.push('/add-contact'),
+            onPressed: () => context.push(AppRoutes.addContact),
           ),
         ],
       ),
       body: contacts.isEmpty
           ? _EmptyState(
-              onAddPressed: () => context.push('/add-contact'),
+              onAddPressed: () => context.push(AppRoutes.addContact),
             )
           : ListView.builder(
               padding: const EdgeInsets.all(16),
@@ -60,7 +61,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                     ref.read(contactsProvider.notifier).toggleLocationSharing(contact.id);
                   },
                   onEdit: () {
-                    context.push('/add-contact', extra: contact);
+                    context.push(AppRoutes.addContact, extra: contact);
                   },
                   onDelete: () {
                     _showDeleteDialog(contact);
@@ -69,7 +70,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
               },
             ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/add-contact'),
+        onPressed: () => context.push(AppRoutes.addContact),
         icon: const Icon(Icons.person_add),
         label: const Text('Add Contact'),
       ),

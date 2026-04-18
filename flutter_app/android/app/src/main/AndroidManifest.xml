@@ -6,15 +6,24 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
-    <!-- SMS Permissions -->
+    <!-- SMS Permissions (send-only; we never read SMS) -->
     <uses-permission android:name="android.permission.SEND_SMS" />
-    <uses-permission android:name="android.permission.READ_SMS" />
 
     <!-- Camera & Recording -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <!-- Legacy storage perms are only needed on API <=28 / <=32. On
+         Android 10+ scoped storage makes them unnecessary; on 13+ we
+         use the granular READ_MEDIA_* permissions below. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- READ_MEDIA_AUDIO intentionally omitted: we capture audio with
+         RECORD_AUDIO but never read the user's existing audio library. -->
+
 
     <!-- Phone & Contacts -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
@@ -23,7 +32,6 @@
     <!-- Notifications & Sensors -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Internet -->

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../../app/routes.dart';
 import '../../../../core/providers/live_sharing_provider.dart';
 import '../../../../core/providers/location_provider.dart';
 import '../../../../core/services/background_service.dart';
@@ -52,9 +53,12 @@ class _ActiveShareScreenState extends ConsumerState<ActiveShareScreen> {
   void initState() {
     super.initState();
 
-    // Force a redraw every second so "last updated" stays accurate.
+    // Periodic redraw so LiveMapView can re-evaluate its staleness badge
+    // (kStaleThreshold = 60s). 5s is a pragmatic middle ground — the
+    // previous 1s interval forced ~3,600 full-subtree rebuilds/hour just
+    // to refresh a badge that changes at most once per minute.
     _ticker = Timer.periodic(
-      const Duration(seconds: 1),
+      const Duration(seconds: 5),
       (_) => mounted ? setState(() {}) : null,
     );
 
@@ -112,14 +116,22 @@ class _ActiveShareScreenState extends ConsumerState<ActiveShareScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Navigate away when the session is inactive. The old
+    // addPostFrameCallback inside an if-branch scheduled a route push on
+    // every frame while inactive. Using ref.listen (deduped across
+    // rebuilds) fires once per state change. We do NOT gate on
+    // `prev.isActive` because a cold start where the provider's very
+    // first emission is already inactive would otherwise leave the user
+    // stranded on the loading spinner forever.
+    ref.listen<LiveSharingState>(liveSharingProvider, (prev, next) {
+      if (!next.isActive && mounted) {
+        context.go(AppRoutes.home);
+      }
+    });
     final sharing = ref.watch(liveSharingProvider);
     final locationState = ref.watch(locationProvider);
 
     if (!sharing.isActive) {
-      // Session ended (e.g. user hit stop) - bounce back.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) context.go('/');
-      });
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );

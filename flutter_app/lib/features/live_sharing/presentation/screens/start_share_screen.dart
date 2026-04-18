@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../app/routes.dart';
 import '../../../../core/models/contact_model.dart';
 import '../../../../core/providers/contacts_provider.dart';
 import '../../../../core/providers/live_sharing_provider.dart';
@@ -34,7 +35,7 @@ class _StartShareScreenState extends ConsumerState<StartShareScreen> {
         title: const Text('Share Live Location'),
       ),
       body: allContacts.isEmpty
-          ? _EmptyContactsState(onAdd: () => context.push('/add-contact'))
+          ? _EmptyContactsState(onAdd: () => context.push(AppRoutes.addContact))
           : _buildBody(allContacts, liveState),
       bottomNavigationBar: allContacts.isEmpty
           ? null
@@ -150,7 +151,7 @@ class _StartShareScreenState extends ConsumerState<StartShareScreen> {
 
     if (!mounted) return;
     if (ok) {
-      context.pushReplacement('/live-share/active');
+      context.pushReplacement(AppRoutes.liveShareActive);
     }
   }
 }

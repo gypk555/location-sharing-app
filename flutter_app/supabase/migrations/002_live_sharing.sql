@@ -60,6 +60,11 @@ ALTER TABLE public.profiles
 --
 -- Returns: a single row with owner name + latest location.
 -- Raises: 'invalid_token' (P0001) or 'share_ended' (P0002).
+-- NOTE: The reverse-geocoded `address` is intentionally excluded. Share
+-- URLs can be forwarded via SMS/WhatsApp and persist in message logs;
+-- returning a precise street address (home, shelter) would make every
+-- leaked link a doxxing vector. Clients that need a textual description
+-- can reverse-geocode lat/lng on their side.
 CREATE OR REPLACE FUNCTION public.get_live_share(p_token UUID)
 RETURNS TABLE (
     owner_name TEXT,
@@ -68,7 +73,6 @@ RETURNS TABLE (
     accuracy DOUBLE PRECISION,
     speed DOUBLE PRECISION,
     heading DOUBLE PRECISION,
-    address TEXT,
     location_timestamp TIMESTAMPTZ,
     is_active BOOLEAN,
     expires_at TIMESTAMPTZ
@@ -106,7 +110,6 @@ BEGIN
         lh.accuracy,
         lh.speed,
         lh.heading,
-        lh.address,
         lh.created_at,
         v_share.is_active,
         v_share.expires_at
@@ -129,9 +132,14 @@ GRANT EXECUTE ON FUNCTION public.get_live_share(UUID) TO anon, authenticated;
 -- whether a contact can receive in-app realtime updates or should
 -- instead receive an SMS link.
 --
--- SECURITY DEFINER is intentional: we want authenticated users to be
--- able to check if a phone is registered, without exposing the full
--- profiles table via RLS.
+-- SECURITY DEFINER is intentional so we can look up profiles without
+-- exposing the full table via RLS, but the lookup is gated: the caller
+-- may only resolve phones that exist in their own emergency_contacts
+-- list. This prevents mass enumeration of registered users by abusers
+-- iterating through E.164 ranges — a real risk for a women's safety app.
+--
+-- Per-IP / per-user rate-limiting should also be added at the Elysia
+-- layer for defense in depth.
 CREATE OR REPLACE FUNCTION public.find_user_by_phone(p_phone TEXT)
 RETURNS UUID
 LANGUAGE sql
@@ -139,9 +147,15 @@ SECURITY DEFINER
 STABLE
 SET search_path = public, pg_temp
 AS $$
-    SELECT id
-    FROM public.profiles
-    WHERE phone = p_phone
+    SELECT p.id
+    FROM public.profiles p
+    WHERE p.phone = p_phone
+      AND EXISTS (
+          SELECT 1
+          FROM public.emergency_contacts ec
+          WHERE ec.user_id = auth.uid()
+            AND ec.phone = p_phone
+      )
     LIMIT 1;
 $$;
 
@@ -149,11 +163,43 @@ REVOKE ALL ON FUNCTION public.find_user_by_phone(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.find_user_by_phone(TEXT) TO authenticated;
 
 -- =============================================
--- 5. Schedule auto-expire of location shares
+-- 5. Override expire_location_shares() with a 24h hard cap
 -- =============================================
--- Runs every minute. Marks any active share past its expires_at
--- as inactive. Idempotent — safe to run concurrently with app writes.
--- Uses pg_cron (must be enabled in Database -> Extensions).
+-- The baseline in schema.sql only expires shares that have an explicit
+-- expires_at in the past. Sessions triggered via SOS or "share until
+-- stopped" have expires_at = NULL, so if the client ever becomes
+-- orphaned (app force-stopped, foreground service crashes but auto-
+-- restarts, etc.) location exfiltration could continue indefinitely
+-- with no user-visible UI.
+--
+-- The overridden function adds an absolute 24-hour cap regardless of
+-- expires_at. If a user genuinely needs a longer session they can
+-- start a new one; the tradeoff is acceptable for safety-app semantics.
+CREATE OR REPLACE FUNCTION public.expire_location_shares()
+RETURNS INT AS $$
+DECLARE
+    updated_count INT;
+BEGIN
+    UPDATE public.location_sharing
+    SET is_active = FALSE
+    WHERE is_active = TRUE
+      AND (
+          (expires_at IS NOT NULL AND expires_at <= NOW())
+          OR created_at < NOW() - INTERVAL '24 hours'
+      );
+
+    GET DIAGNOSTICS updated_count = ROW_COUNT;
+    RETURN updated_count;
+END;
+$$ LANGUAGE plpgsql SECURITY INVOKER SET search_path = '';
+
+-- =============================================
+-- 6. Schedule auto-expire of location shares
+-- =============================================
+-- Runs every minute. Marks any active share past its expires_at or
+-- past the 24h hard cap as inactive. Idempotent — safe to run
+-- concurrently with app writes. Uses pg_cron (must be enabled in
+-- Database -> Extensions).
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
@@ -172,7 +218,7 @@ BEGIN
 END $$;
 
 -- =============================================
--- 6. Backfill session_group_id for existing rows (if any)
+-- 7. Backfill session_group_id for existing rows (if any)
 -- =============================================
 -- Any pre-existing location_sharing rows get their own session group.
 -- Safe no-op if the table is empty.
@@ -181,7 +227,7 @@ SET session_group_id = gen_random_uuid()
 WHERE session_group_id IS NULL;
 
 -- =============================================
--- 7. Realtime: publication membership + REPLICA IDENTITY
+-- 8. Realtime: publication membership + REPLICA IDENTITY
 -- =============================================
 -- The Flutter receiver subscribes to realtime changes on these two tables
 -- so it can (a) render live position updates and (b) react when a share
@@ -222,7 +268,7 @@ ALTER TABLE public.location_sharing REPLICA IDENTITY FULL;
 ALTER TABLE public.location_history  REPLICA IDENTITY FULL;
 
 -- =============================================
--- 8. Recipient SELECT policy (without is_active filter)
+-- 9. Recipient SELECT policy (without is_active filter)
 -- =============================================
 -- The original policy from schema.sql ("Shared users can view their
 -- access") filters SELECT on `is_active = TRUE`. That breaks realtime

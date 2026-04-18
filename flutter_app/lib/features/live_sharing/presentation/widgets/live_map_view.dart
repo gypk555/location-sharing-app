@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -43,6 +45,12 @@ class _LiveMapViewState extends State<LiveMapView> {
   final MapController _controller = MapController();
   bool _userPanned = false;
   bool _mapReady = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(covariant LiveMapView old) {
@@ -200,7 +208,7 @@ class _LiveMarker extends StatelessWidget {
             shadows: const [Shadow(blurRadius: 6, color: Colors.black38)],
           )
         : Transform.rotate(
-            angle: (headingDegrees! * 3.1415926535 / 180),
+            angle: headingDegrees! * math.pi / 180,
             child: pin,
           );
     return Column(

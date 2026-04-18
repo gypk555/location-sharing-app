@@ -94,7 +94,11 @@ class LiveSharingNotifier extends StateNotifier<LiveSharingState> {
   /// Dart `Timer`s run on the UI isolate event loop, which stops when
   /// the app is backgrounded — [_pollTimer] is the *foreground* sync
   /// path; background → foreground is handled by lifecycle resume.
-  static const _pollInterval = Duration(seconds: 15);
+  // The Realtime subscription in `incomingSharesProvider` is the
+  // primary change-notification channel; the poll is just a safety net
+  // for cases where Realtime drops silently. Bumped from 15s to 60s to
+  // match the heartbeat cadence and cut foreground SELECTs 4x.
+  static const _pollInterval = Duration(seconds: 60);
 
   /// Timer that fires when the current session reaches its expiry time.
   /// Cancelled on stop() and reset on every state change that has a new
@@ -246,7 +250,14 @@ class LiveSharingNotifier extends StateNotifier<LiveSharingState> {
   /// in-memory state, the local state is cleared — this is how an
   /// expired session gets reflected in the UI when the user comes back
   /// from a long background where the Dart expiry timer didn't fire.
+  /// Re-entrancy guard: a slow poll (15s+) can stack up if the network
+  /// is sluggish, causing multiple concurrent SELECTs and overlapping
+  /// state writes. A single in-flight hydration is plenty.
+  bool _isHydrating = false;
+
   Future<void> hydrateFromServer() async {
+    if (_isHydrating) return;
+    _isHydrating = true;
     try {
       final rows = await _service.activeSessions();
       if (rows.isEmpty) {
@@ -337,6 +348,8 @@ class LiveSharingNotifier extends StateNotifier<LiveSharingState> {
       );
     } catch (e, stack) {
       AppLogger.error('hydrateFromServer failed', e, stack);
+    } finally {
+      _isHydrating = false;
     }
   }
 
@@ -345,18 +358,19 @@ class LiveSharingNotifier extends StateNotifier<LiveSharingState> {
       case AuthFailure(:final message):
         return message;
       case DatabaseFailure(:final code, :final message):
+        // Raw PostgREST / Postgres error text can leak constraint names,
+        // column names, and function signatures. Log the raw at error
+        // level (the service layer already does this) and return a
+        // generic user-facing string for anything we don't have a
+        // specific translation for.
+        AppLogger.debug('live-sharing DB failure $code: $message');
         if (code == '23505') {
-          // Unique-violation — our deactivate-then-insert should prevent
-          // this. If we see it anyway, something raced or the pre-cleanup
-          // didn't run.
           return 'A previous share with one of these contacts is still '
               'active. Try again in a moment.';
         }
-        return 'Could not start sharing: $message';
-      case UnknownFailure(:final message):
-        return message.isEmpty
-            ? 'Could not start live sharing. Please try again.'
-            : message;
+        return 'Could not start live sharing. Please try again.';
+      case UnknownFailure():
+        return 'Could not start live sharing. Please try again.';
     }
   }
 }

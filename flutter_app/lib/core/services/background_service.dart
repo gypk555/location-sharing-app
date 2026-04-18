@@ -16,9 +16,11 @@ import 'location_service.dart';
 /// Namespaced SharedPreferences keys used to bridge state from the UI
 /// isolate into the background isolate. The background isolate cannot share
 /// memory with the UI isolate, so everything it needs is persisted here.
+///
+/// Supabase URL and anon key are deliberately NOT stored here: the
+/// background isolate loads them from the bundled `.env` asset via
+/// flutter_dotenv, avoiding plaintext credentials in SharedPreferences.
 class _BgPrefsKeys {
-  static const supabaseUrl = 'bg.supabase_url';
-  static const supabaseAnonKey = 'bg.supabase_anon_key';
   static const sessionGroupId = 'bg.session_group_id';
   static const trackingTier = 'bg.tracking_tier';
   static const recipientCount = 'bg.recipient_count';
@@ -41,15 +43,6 @@ class BackgroundService {
   /// is loaded and Supabase is initialized on the UI side.
   static Future<void> configure() async {
     try {
-      // Persist config the background isolate will need to boot up.
-      final prefs = await SharedPreferences.getInstance();
-      final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
-      final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
-      if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
-        await prefs.setString(_BgPrefsKeys.supabaseUrl, supabaseUrl);
-        await prefs.setString(_BgPrefsKeys.supabaseAnonKey, supabaseAnonKey);
-      }
-
       // Create the notification channel used by the foreground service.
       // flutter_background_service only configures the channel *id*; the
       // channel itself must exist on the device before any FGS tries to
@@ -168,10 +161,52 @@ class BackgroundService {
     return true;
   }
 
-  /// Stop the background service gracefully.
+  /// Stop the background service gracefully. `invoke('stop')` is
+  /// fire-and-forget by design of the plugin — we can't confirm the
+  /// isolate processed it. A single-shot 2s check used to log a
+  /// warning and give up; a stuck foreground notification then
+  /// lingered indefinitely (bad UX + battery drain).
+  ///
+  /// We now poll `isRunning()` on an exponential-ish schedule (code-
+  /// review finding §3.4) and re-send `stop` on each iteration in
+  /// case the earlier message was dropped. After 3.5s total we give
+  /// up and log a warning — when a crash reporter is wired this is
+  /// where we'd record a non-fatal for visibility.
   static Future<void> stopSharing() async {
+    // Clear the bridge-prefs BEFORE signalling stop. If Android later
+    // auto-restarts the foreground service (START_STICKY +
+    // stopWithTask="false"), `_onBackgroundStart` will see an empty
+    // sessionGroupId and immediately stopSelf() instead of posting a
+    // stale "Sharing your live location" notification.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_BgPrefsKeys.sessionGroupId);
+      await prefs.remove(_BgPrefsKeys.recipientCount);
+      await prefs.remove(_BgPrefsKeys.trackingTier);
+    } catch (e) {
+      AppLogger.error('bg: clear prefs on stop failed', e);
+    }
     final service = FlutterBackgroundService();
     service.invoke('stop');
+    await _confirmStopped(service);
+  }
+
+  static Future<void> _confirmStopped(FlutterBackgroundService service) async {
+    const delaysMs = [500, 1000, 2000];
+    for (final ms in delaysMs) {
+      await Future<void>.delayed(Duration(milliseconds: ms));
+      try {
+        if (!await service.isRunning()) return;
+      } catch (_) {
+        // Plugin may throw if the channel is torn down — treat as stopped.
+        return;
+      }
+      service.invoke('stop');
+    }
+    AppLogger.warning(
+        'bg: stop not honored after ${delaysMs.length} retries');
+    // TODO: when Crashlytics is wired, record a non-fatal here so this
+    // case shows up in telemetry instead of only in debug logs.
   }
 
   /// Change the tracking tier (e.g. when SOS fires).
@@ -207,11 +242,22 @@ Future<void> _onBackgroundStart(ServiceInstance service) async {
 
   final prefs = await SharedPreferences.getInstance();
 
-  // Boot Supabase in this isolate. Session persistence is backed by
-  // SharedPreferences on both platforms, so the auth session we signed
-  // in with on the UI side should be recovered automatically.
-  final url = prefs.getString(_BgPrefsKeys.supabaseUrl) ?? '';
-  final anonKey = prefs.getString(_BgPrefsKeys.supabaseAnonKey) ?? '';
+  // Boot Supabase in this isolate. The background isolate is a separate
+  // Dart VM and does not inherit the UI isolate's in-memory dotenv; we
+  // re-load the bundled `.env` asset here. Session persistence is backed
+  // by SharedPreferences on both platforms, so the auth session we
+  // signed in with on the UI side is recovered automatically.
+  String url = '';
+  String anonKey = '';
+  try {
+    if (!dotenv.isInitialized) {
+      await dotenv.load(fileName: '.env');
+    }
+    url = dotenv.env['SUPABASE_URL'] ?? '';
+    anonKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
+  } catch (e) {
+    AppLogger.error('bg: dotenv load failed', e);
+  }
   SupabaseClient? supabase;
   if (url.isNotEmpty && anonKey.isNotEmpty) {
     try {
@@ -219,7 +265,16 @@ Future<void> _onBackgroundStart(ServiceInstance service) async {
       supabase = Supabase.instance.client;
       AppLogger.info('bg: Supabase initialized in background isolate');
     } catch (e) {
-      AppLogger.error('bg: Supabase init failed', e);
+      // If the OS auto-restarted the foreground service inside the
+      // same isolate, Supabase.initialize will throw "already
+      // initialized" — fall back to the existing singleton instead
+      // of crashing the isolate silently.
+      try {
+        supabase = Supabase.instance.client;
+        AppLogger.info('bg: reusing existing Supabase client');
+      } catch (_) {
+        AppLogger.error('bg: Supabase init failed', e);
+      }
     }
   }
 
@@ -236,6 +291,17 @@ Future<void> _onBackgroundStart(ServiceInstance service) async {
     (t) => t.name == tierName,
     orElse: () => TrackingTier.normal,
   );
+
+  // If this is an OS-driven restart (START_STICKY + stopWithTask="false")
+  // after the user explicitly stopped sharing, the bridge-prefs were
+  // cleared in stopSharing() and we must not run or post the persistent
+  // notification — the user would see "Sharing your live location" with
+  // no matching DB rows. Bail out before wiring heartbeats/listeners.
+  if (sessionGroupId.isEmpty) {
+    AppLogger.info('bg: no active session in prefs, stopping restarted service');
+    await service.stopSelf();
+    return;
+  }
 
   // Update the persistent notification with recipient count.
   Future<void> updateNotification() async {
@@ -305,8 +371,11 @@ Future<void> _onBackgroundStart(ServiceInstance service) async {
     }
   });
 
-  // Listen for commands from the UI isolate.
-  service.on('setTier').listen((event) async {
+  // Listen for commands from the UI isolate. Subscriptions are captured so
+  // they can be cancelled in the 'stop' handler — otherwise a stop→start
+  // cycle (OS-driven restart) would accumulate duplicate listeners and
+  // process each tick N times on the second and subsequent sessions.
+  final setTierSub = service.on('setTier').listen((event) async {
     final name = event?['tier'] as String? ?? 'normal';
     final newTier = TrackingTier.values.firstWhere(
       (t) => t.name == name,
@@ -316,7 +385,7 @@ Future<void> _onBackgroundStart(ServiceInstance service) async {
     await locationService.setTier(newTier);
   });
 
-  service.on('refresh').listen((event) async {
+  final refreshSub = service.on('refresh').listen((event) async {
     sessionGroupId = event?['sessionGroupId'] as String? ?? sessionGroupId;
     recipientCount = (event?['recipientCount'] as int?) ?? recipientCount;
     final newTierName = event?['tier'] as String?;
@@ -330,8 +399,14 @@ Future<void> _onBackgroundStart(ServiceInstance service) async {
     await updateNotification();
   });
 
+  // stopSelf() tears down the isolate, so anything after it (including
+  // cancelling this very subscription) is effectively unreachable —
+  // that's fine, because a fresh _onBackgroundStart gets its own set of
+  // subscriptions anyway.
   service.on('stop').listen((event) async {
     heartbeatTimer?.cancel();
+    await setTierSub.cancel();
+    await refreshSub.cancel();
     locationService.removeSink(writePositionToSupabase);
     locationService.stopTracking();
     await service.stopSelf();

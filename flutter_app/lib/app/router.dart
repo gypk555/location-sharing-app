@@ -17,6 +17,7 @@ import '../features/live_sharing/presentation/screens/active_share_screen.dart';
 import '../features/live_sharing/presentation/screens/receive_share_screen.dart';
 import '../features/live_sharing/presentation/screens/start_share_screen.dart';
 import '../shared/widgets/main_scaffold.dart';
+import 'routes.dart';
 
 /// Listenable that notifies GoRouter when auth state changes
 class _AuthNotifier extends ChangeNotifier {
@@ -28,56 +29,61 @@ class _AuthNotifier extends ChangeNotifier {
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authNotifier = _AuthNotifier(ref);
+  // Riverpod caches `Provider`s, but `_AuthNotifier` holds a ChangeNotifier
+  // subscription and must be disposed if the provider is ever invalidated
+  // (hot restart, ProviderScope teardown in tests). Without this hook the
+  // listener is leaked on recreation (code-review finding §3.7).
+  ref.onDispose(authNotifier.dispose);
 
   return GoRouter(
-    initialLocation: '/splash',
+    initialLocation: AppRoutes.splash,
     refreshListenable: authNotifier,
     redirect: (context, state) {
       final authState = ref.read(authStateProvider);
       final isLoggedIn = authState.isAuthenticated;
       final hasInitialized = authState.hasInitialized;
       final initError = authState.initError;
-      final isSplashRoute = state.matchedLocation == '/splash';
-      final isAuthRoute = state.matchedLocation == '/auth' ||
-          state.matchedLocation == '/otp';
+      final isSplashRoute = state.matchedLocation == AppRoutes.splash;
+      final isAuthRoute = state.matchedLocation == AppRoutes.auth ||
+          state.matchedLocation == AppRoutes.otp;
 
       // App not initialized yet - always show splash screen
       // This prevents a brief flash of the auth screen before session restore completes.
-      if (!hasInitialized) return isSplashRoute ? null : '/splash';
+      if (!hasInitialized) return isSplashRoute ? null : AppRoutes.splash;
 
       // Initialization error - keep user on splash to show retry UI
       // Allow logged-in users to proceed (offline-friendly)
       if (initError != null && !isLoggedIn) {
-        return isSplashRoute ? null : '/splash';
+        return isSplashRoute ? null : AppRoutes.splash;
       }
 
       // Loading complete - proceed with auth checks
       if (hasInitialized && isSplashRoute) {
         // If logged in, go to home, otherwise go to auth
-        return isLoggedIn ? '/' : '/auth';
+        return isLoggedIn ? AppRoutes.home : AppRoutes.auth;
       }
 
       // Not logged in and not on auth page
-      if (!isLoggedIn && !isAuthRoute) return '/auth';
+      if (!isLoggedIn && !isAuthRoute) return AppRoutes.auth;
 
       // Logged in but on auth page
-      if (isLoggedIn && isAuthRoute) return '/';
+      if (isLoggedIn && isAuthRoute) return AppRoutes.home;
 
       return null;
     },
     routes: [
       // Splash screen shown during initialization
       GoRoute(
-        path: '/splash',
+        path: AppRoutes.splash,
         builder: (context, state) => const SplashScreen(),
       ),
       // Auth routes - unified auth screen replaces login/register
       GoRoute(
-        path: '/auth',
+        path: AppRoutes.auth,
         builder: (context, state) => const UnifiedAuthScreen(),
       ),
       GoRoute(
-        path: '/otp',
+        path: AppRoutes.otp,
         builder: (context, state) {
           final phone = state.extra as String? ?? '';
           return OtpScreen(phone: phone);
@@ -89,19 +95,19 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state, child) => MainScaffold(child: child),
         routes: [
           GoRoute(
-            path: '/',
+            path: AppRoutes.home,
             builder: (context, state) => const HomeScreen(),
           ),
           GoRoute(
-            path: '/sos',
+            path: AppRoutes.sos,
             builder: (context, state) => const SosScreen(),
           ),
           GoRoute(
-            path: '/contacts',
+            path: AppRoutes.contacts,
             builder: (context, state) => const ContactsScreen(),
           ),
           GoRoute(
-            path: '/settings',
+            path: AppRoutes.settings,
             builder: (context, state) => const SettingsScreen(),
           ),
         ],
@@ -109,7 +115,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Additional routes
       GoRoute(
-        path: '/add-contact',
+        path: AppRoutes.addContact,
         builder: (context, state) {
           // Safe type check to prevent runtime crash if wrong type is passed
           final contact = state.extra is ContactModel ? state.extra as ContactModel : null;
@@ -117,21 +123,21 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
-        path: '/fake-call',
+        path: AppRoutes.fakeCall,
         builder: (context, state) => const FakeCallScreen(),
       ),
 
       // Live location sharing
       GoRoute(
-        path: '/live-share/start',
+        path: AppRoutes.liveShareStart,
         builder: (context, state) => const StartShareScreen(),
       ),
       GoRoute(
-        path: '/live-share/active',
+        path: AppRoutes.liveShareActive,
         builder: (context, state) => const ActiveShareScreen(),
       ),
       GoRoute(
-        path: '/live-share/view/:id',
+        path: AppRoutes.liveShareViewPattern,
         builder: (context, state) {
           final id = state.pathParameters['id'] ?? '';
           return ReceiveShareScreen(sharingId: id);

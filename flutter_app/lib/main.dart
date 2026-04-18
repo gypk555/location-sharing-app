@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -10,6 +11,7 @@ import 'core/models/user_model.dart';
 import 'core/models/contact_model.dart';
 import 'core/models/location_model.dart';
 import 'core/services/background_service.dart';
+import 'core/services/secure_hive.dart';
 import 'shared/utils/logger.dart';
 
 void main() async {
@@ -32,10 +34,24 @@ void main() async {
   final supabaseUrl = dotenv.env['SUPABASE_URL'];
   final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
 
-  if (supabaseUrl != null &&
+  final hasSupabaseCreds = supabaseUrl != null &&
       supabaseUrl.isNotEmpty &&
       supabaseAnonKey != null &&
-      supabaseAnonKey.isNotEmpty) {
+      supabaseAnonKey.isNotEmpty;
+
+  // Release builds MUST have Supabase credentials wired. A release APK
+  // without `.env` silently fell through to in-memory demo auth, so users
+  // could "sign in" but every RLS-protected write (SOS included) vanished
+  // into the void (security fix M-1). Fail loud in release; keep the
+  // graceful path for debug / CI runs.
+  if (!kDebugMode && !hasSupabaseCreds) {
+    throw StateError(
+      'Supabase credentials missing in release build. '
+      'SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env.',
+    );
+  }
+
+  if (hasSupabaseCreds) {
     try {
       await Supabase.initialize(
         url: supabaseUrl,
@@ -58,6 +74,12 @@ void main() async {
   Hive.registerAdapter(UserModelAdapter());
   Hive.registerAdapter(ContactModelAdapter());
   Hive.registerAdapter(LocationModelAdapter());
+
+  // Initialize the Hive encryption cipher before any box is opened. Every
+  // box in the app is opened via SecureHive.openBox, which applies this
+  // cipher and transparently migrates pre-existing unencrypted boxes
+  // (security fix H-2).
+  await SecureHive.init();
 
   // Configure the background location service. Safe to call even if the
   // user never starts a live share — the service won't run until explicitly
