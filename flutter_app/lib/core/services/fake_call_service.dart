@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../providers/app_preferences_provider.dart'
+    show kFakeCallerNamePrefKey, kFakeCallerNumberPrefKey;
 import '../../shared/utils/logger.dart';
 
 enum FakeCallStatus {
@@ -30,9 +33,29 @@ class FakeCallService {
   String get callerName => _callerName;
   String get callerNumber => _callerNumber;
 
-  void setCallerInfo(String name, String number) {
+  /// Hydrate caller info from SharedPreferences. Call once from main.dart.
+  Future<void> loadPersistedCallerInfo() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final name = prefs.getString(kFakeCallerNamePrefKey);
+      final number = prefs.getString(kFakeCallerNumberPrefKey);
+      if (name != null && name.isNotEmpty) _callerName = name;
+      if (number != null && number.isNotEmpty) _callerNumber = number;
+    } catch (e) {
+      AppLogger.debug('FakeCallService: could not load caller info: $e');
+    }
+  }
+
+  Future<void> setCallerInfo(String name, String number) async {
     _callerName = name;
     _callerNumber = number;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(kFakeCallerNamePrefKey, name);
+      await prefs.setString(kFakeCallerNumberPrefKey, number);
+    } catch (e) {
+      AppLogger.debug('FakeCallService: could not persist caller info: $e');
+    }
   }
 
   void scheduleCall(Duration delay) {

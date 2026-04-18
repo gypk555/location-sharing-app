@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'router.dart';
+import '../core/providers/app_preferences_provider.dart';
 import '../core/providers/sos_provider.dart';
 import '../core/services/sos_service.dart';
 import '../shared/theme/app_theme.dart';
@@ -75,13 +76,16 @@ class _SafetyAppState extends ConsumerState<SafetyApp> with WidgetsBindingObserv
   @override
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
+    final themeMode = ref.watch(
+      appPreferencesProvider.select((s) => s.themeMode),
+    );
 
     return MaterialApp.router(
       title: 'Safety App',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.system,
+      themeMode: themeMode,
       routerConfig: router,
     );
   }

@@ -11,7 +11,9 @@ import 'core/models/user_model.dart';
 import 'core/models/contact_model.dart';
 import 'core/models/location_model.dart';
 import 'core/services/background_service.dart';
+import 'core/services/fake_call_service.dart';
 import 'core/services/secure_hive.dart';
+import 'core/services/sos_service.dart';
 import 'shared/utils/logger.dart';
 
 void main() async {
@@ -81,10 +83,15 @@ void main() async {
   // (security fix H-2).
   await SecureHive.init();
 
-  // Configure the background location service. Safe to call even if the
-  // user never starts a live share — the service won't run until explicitly
-  // started via BackgroundService.startSharing().
-  await BackgroundService.configure();
+  // Configure the background location service and hydrate SOS / fake-call
+  // preferences in parallel — none of the three depend on each other.
+  // Safe to call BackgroundService.configure even if the user never starts
+  // a live share (the service won't run until explicitly started).
+  await Future.wait([
+    BackgroundService.configure(),
+    SosService().init(),
+    FakeCallService().loadPersistedCallerInfo(),
+  ]);
 
   runApp(
     const ProviderScope(

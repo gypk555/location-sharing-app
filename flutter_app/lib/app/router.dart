@@ -11,6 +11,7 @@ import '../features/home/screens/home_screen.dart';
 import '../features/sos/screens/sos_screen.dart';
 import '../features/contacts/screens/contacts_screen.dart';
 import '../features/contacts/screens/add_contact_screen.dart';
+import '../features/settings/screens/notifications_settings_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/fake_call/screens/fake_call_screen.dart';
 import '../features/live_sharing/presentation/screens/active_share_screen.dart';
@@ -125,6 +126,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.fakeCall,
         builder: (context, state) => const FakeCallScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.notificationsSettings,
+        builder: (context, state) => const NotificationsSettingsScreen(),
       ),
 
       // Live location sharing

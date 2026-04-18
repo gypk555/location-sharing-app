@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'location_service.dart';
 import 'secure_hive.dart';
 import 'sms_service.dart';
 import '../models/contact_model.dart';
+import '../providers/app_preferences_provider.dart' show kSosTemplatePrefKey;
 import '../../shared/constants/app_constants.dart';
 import '../../shared/utils/logger.dart';
 
@@ -46,18 +48,59 @@ class SosService {
 
   bool _isShakeEnabled = true;
   int _countdownSeconds = 5;
+  String? _sosTemplateOverride;
 
-  void setShakeEnabled(bool enabled) {
+  static const _prefShakeEnabled = 'sos_shake_enabled';
+  static const _prefCountdownSeconds = 'sos_countdown_seconds';
+
+  bool get shakeEnabled => _isShakeEnabled;
+  int get countdownSeconds => _countdownSeconds;
+
+  /// Called by AppPreferencesNotifier whenever the user edits the SOS
+  /// template so the hot path (_triggerSos) can read a cached field
+  /// instead of awaiting SharedPreferences on every alert.
+  void updateSosTemplateOverride(String? template) {
+    _sosTemplateOverride = template;
+  }
+
+  /// Loads persisted SOS preferences. Must be awaited from main.dart before
+  /// any provider reads service state, otherwise the notifier seeds with
+  /// static defaults and the user's choices appear to reset on every launch.
+  Future<void> init() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _isShakeEnabled = prefs.getBool(_prefShakeEnabled) ?? _isShakeEnabled;
+      _countdownSeconds =
+          prefs.getInt(_prefCountdownSeconds) ?? _countdownSeconds;
+      _sosTemplateOverride = prefs.getString(kSosTemplatePrefKey);
+    } catch (e) {
+      AppLogger.debug('SosService: could not load prefs: $e');
+    }
+  }
+
+  Future<void> setShakeEnabled(bool enabled) async {
     _isShakeEnabled = enabled;
     if (enabled) {
       startShakeDetection();
     } else {
       stopShakeDetection();
     }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefShakeEnabled, enabled);
+    } catch (e) {
+      AppLogger.debug('SosService: could not persist shake flag: $e');
+    }
   }
 
-  void setCountdownSeconds(int seconds) {
+  Future<void> setCountdownSeconds(int seconds) async {
     _countdownSeconds = seconds;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_prefCountdownSeconds, seconds);
+    } catch (e) {
+      AppLogger.debug('SosService: could not persist countdown: $e');
+    }
   }
 
   void startShakeDetection() {
@@ -154,10 +197,13 @@ class SosService {
         return;
       }
 
-      // Send SOS SMS (one to each contact)
+      // Send SOS SMS (one to each contact). The template cache is
+      // populated by init() and refreshed via updateSosTemplateOverride
+      // whenever the user saves in Settings — no awaits on the hot path.
       final sentCount = await _smsService.sendSosAlert(
         contacts: contacts,
         location: location,
+        customMessage: _sosTemplateOverride,
       );
 
       // Track send status: success, partial, or failure

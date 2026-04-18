@@ -18,6 +18,7 @@ abstract final class AppRoutes {
 
   static const addContact = '/add-contact';
   static const fakeCall = '/fake-call';
+  static const notificationsSettings = '/settings/notifications';
 
   static const liveShareStart = '/live-share/start';
   static const liveShareActive = '/live-share/active';

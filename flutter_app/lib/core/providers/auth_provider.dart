@@ -193,6 +193,30 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Update the signed-in user's name and/or phone. Either argument may be
+  /// null to leave that field unchanged. Throws nothing — errors land in
+  /// `state.error` so the dialog can surface them inline.
+  Future<bool> updateProfile({String? name, String? phone}) async {
+    if (state.user == null) return false;
+    _safeSetState(state.copyWith(isLoading: true, error: null));
+    try {
+      if (phone != null && phone.isNotEmpty) {
+        await _authService.updatePhone(phone);
+      }
+      if (name != null && name.isNotEmpty) {
+        await _authService.updateProfile(name: name);
+      }
+      _safeSetState(state.copyWith(
+        user: _authService.currentUser,
+        isLoading: false,
+      ));
+      return true;
+    } catch (e) {
+      _safeSetState(state.copyWith(isLoading: false, error: e.toString()));
+      return false;
+    }
+  }
+
   Future<void> signOut() async {
     _safeSetState(state.copyWith(isLoading: true, error: null));
     try {

@@ -72,7 +72,12 @@ class SosNotifier extends StateNotifier<SosState> {
   StreamSubscription<SosStatus>? _statusSubscription;
   StreamSubscription<int>? _countdownSubscription;
 
-  SosNotifier(this._sosService) : super(const SosState()) {
+  SosNotifier(this._sosService)
+      : super(SosState(
+          countdown: _sosService.countdownSeconds,
+          countdownSeconds: _sosService.countdownSeconds,
+          shakeEnabled: _sosService.shakeEnabled,
+        )) {
     _initializeListeners();
   }
 

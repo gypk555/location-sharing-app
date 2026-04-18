@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../app/routes.dart';
+
+import '../../../core/providers/app_preferences_provider.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/contacts_provider.dart';
 import '../../../core/providers/password_breach_provider.dart';
 import '../../../core/providers/sos_provider.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../core/providers/location_permission_provider.dart';
+import '../../../core/services/fake_call_service.dart';
+import '../widgets/fake_caller_dialog.dart';
+import '../widgets/location_permission_dialog.dart';
+import '../widgets/profile_edit_dialog.dart';
+import '../widgets/sos_message_dialog.dart';
+import '../widgets/theme_mode_dialog.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -14,6 +25,20 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
     final sosState = ref.watch(sosProvider);
+    // Granular selects so editing any single preference rebuilds only the
+    // tile that shows it, not the entire ListView.
+    final themeMode = ref.watch(
+      appPreferencesProvider.select((s) => s.themeMode),
+    );
+    final sosTemplateOverride = ref.watch(
+      appPreferencesProvider.select((s) => s.sosTemplateOverride),
+    );
+    final fakeCallerName = ref.watch(
+      appPreferencesProvider.select((s) => s.fakeCallerName),
+    );
+    final fakeCallerNumber = ref.watch(
+      appPreferencesProvider.select((s) => s.fakeCallerNumber),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -41,7 +66,12 @@ class SettingsScreen extends ConsumerWidget {
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
-                // Navigate to profile edit
+                final user = authState.user;
+                if (user == null) return;
+                showDialog(
+                  context: context,
+                  builder: (_) => ProfileEditDialog(user: user),
+                );
               },
             ),
           ),
@@ -76,11 +106,16 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.message),
                   title: const Text('SOS Message'),
-                  subtitle: const Text('Customize emergency message'),
+                  subtitle: Text(
+                    sosTemplateOverride == null
+                        ? 'Default message'
+                        : 'Customized',
+                  ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    // Navigate to message customization
-                  },
+                  onTap: () => showDialog(
+                    context: context,
+                    builder: (_) => const SosMessageDialog(),
+                  ),
                 ),
               ],
             ),
@@ -96,31 +131,41 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.person),
                   title: const Text('Caller Name'),
-                  subtitle: const Text('Mom'),
+                  subtitle: Text(
+                    fakeCallerName ?? FakeCallService().callerName,
+                  ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    // Edit caller name
-                  },
+                  onTap: () => showDialog(
+                    context: context,
+                    builder: (_) => const FakeCallerDialog(
+                      focus: FakeCallerField.name,
+                    ),
+                  ),
                 ),
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.phone),
                   title: const Text('Caller Number'),
-                  subtitle: const Text('+1 234 567 8900'),
+                  subtitle: Text(
+                    fakeCallerNumber ?? FakeCallService().callerNumber,
+                  ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    // Edit caller number
-                  },
+                  onTap: () => showDialog(
+                    context: context,
+                    builder: (_) => const FakeCallerDialog(
+                      focus: FakeCallerField.number,
+                    ),
+                  ),
                 ),
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.music_note),
                   title: const Text('Ringtone'),
-                  subtitle: const Text('Default'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    // Select ringtone
-                  },
+                  // Ringtone picker is blocked on the audio-assets TODO in
+                  // CLAUDE.md. Keeping the row visible but non-interactive
+                  // so users aren't surprised when it doesn't respond.
+                  subtitle: const Text('Default (coming soon)'),
+                  enabled: false,
                 ),
               ],
             ),
@@ -137,22 +182,39 @@ class SettingsScreen extends ConsumerWidget {
                   leading: const Icon(Icons.notifications),
                   title: const Text('Notifications'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
+                  onTap: () => context.push(AppRoutes.notificationsSettings),
                 ),
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.location_on),
                   title: const Text('Location Permissions'),
+                  subtitle: Consumer(
+                    builder: (context, ref, _) {
+                      final async = ref.watch(locationPermissionProvider);
+                      return Text(
+                        async.maybeWhen(
+                          data: (s) => s.label,
+                          orElse: () => '…',
+                        ),
+                      );
+                    },
+                  ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
+                  onTap: () => showDialog(
+                    context: context,
+                    builder: (_) => const LocationPermissionDialog(),
+                  ),
                 ),
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.dark_mode),
                   title: const Text('Dark Mode'),
-                  subtitle: const Text('System default'),
+                  subtitle: Text(themeModeLabel(themeMode)),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
+                  onTap: () => showDialog(
+                    context: context,
+                    builder: (_) => const ThemeModeDialog(),
+                  ),
                 ),
               ],
             ),
@@ -186,36 +248,8 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: 24),
 
-          // About & Support
-          _SectionHeader(title: 'About'),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.info),
-                  title: const Text('About Safety App'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.help),
-                  title: const Text('Help & Support'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.privacy_tip),
-                  title: const Text('Privacy Policy'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 24),
+          // TODO: restore About / Help / Privacy Policy section once the
+          // URLs or in-app content exist. Hidden for now to avoid dead rows.
 
           // Logout
           Card(

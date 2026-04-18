@@ -23,8 +23,8 @@ class SmsService {
     }
 
     final locationText = _formatLocation(location);
-    final message = customMessage ??
-        AppConstants.sosMessageTemplate.replaceAll('{location}', locationText);
+    final template = customMessage ?? AppConstants.sosMessageTemplate;
+    final message = template.replaceAll('{location}', locationText);
 
     final phoneNumbers =
         contacts.where((c) => c.isSosContact).map((c) => c.phone).toList();
