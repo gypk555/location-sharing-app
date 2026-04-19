@@ -115,7 +115,7 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
+            const Icon(
               Icons.people_outline,
               size: 80,
               color: AppTheme.textSecondary,
@@ -126,7 +126,7 @@ class _EmptyState extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Add trusted people who will be notified during emergencies',
               style: TextStyle(color: AppTheme.textSecondary),
               textAlign: TextAlign.center,
@@ -198,7 +198,7 @@ class _ContactCard extends StatelessWidget {
                           const SizedBox(width: 6),
                           // Sync status indicator
                           if (!contact.isSynced)
-                            Tooltip(
+                            const Tooltip(
                               message: 'Not synced to cloud',
                               child: Icon(
                                 Icons.cloud_off,
@@ -207,7 +207,7 @@ class _ContactCard extends StatelessWidget {
                               ),
                             )
                           else
-                            Tooltip(
+                            const Tooltip(
                               message: 'Synced to cloud',
                               child: Icon(
                                 Icons.cloud_done,
@@ -219,7 +219,7 @@ class _ContactCard extends StatelessWidget {
                       ),
                       Text(
                         contact.phone,
-                        style: TextStyle(
+                        style: const TextStyle(
                           color: AppTheme.textSecondary,
                           fontSize: 14,
                         ),
@@ -237,7 +237,7 @@ class _ContactCard extends StatelessWidget {
                           ),
                           child: Text(
                             contact.relationship!,
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: AppTheme.primaryColor,
                               fontSize: 12,
                             ),

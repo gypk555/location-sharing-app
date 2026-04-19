@@ -32,7 +32,7 @@ class LocationErrorCard extends ConsumerWidget {
             children: [
               Text(
                 error,
-                style: TextStyle(
+                style: const TextStyle(
                   color: AppTheme.warningColor,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,

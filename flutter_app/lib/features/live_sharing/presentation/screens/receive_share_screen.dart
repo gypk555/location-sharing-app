@@ -254,10 +254,10 @@ class _DetailsPanel extends StatelessWidget {
                 color: AppTheme.errorColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
+              child: const Row(
                 children: [
                   Icon(Icons.emergency, color: AppTheme.errorColor, size: 18),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Text(
                     'Emergency SOS is active',
                     style: TextStyle(
@@ -329,7 +329,7 @@ class _DetailsPanel extends StatelessWidget {
         Expanded(
           child: Text(
             text,
-            style: TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
           ),
         ),
       ],
@@ -358,7 +358,7 @@ class _EndedPlaceholder extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.location_off, size: 64, color: AppTheme.textSecondary),
+          const Icon(Icons.location_off, size: 64, color: AppTheme.textSecondary),
           const SizedBox(height: 12),
           Text(
             'Share ended',

@@ -114,7 +114,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
             children: [
               const SizedBox(height: 32),
 
-              Icon(
+              const Icon(
                 Icons.sms,
                 size: 64,
                 color: AppTheme.primaryColor,
@@ -131,7 +131,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
               const SizedBox(height: 8),
               Text(
                 'We sent a code to ${widget.phone}',
-                style: TextStyle(color: AppTheme.textSecondary),
+                style: const TextStyle(color: AppTheme.textSecondary),
                 textAlign: TextAlign.center,
               ),
 
@@ -203,7 +203,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
               const Spacer(),
 
-              Text(
+              const Text(
                 'Demo: Enter any 6 digits to login',
                 style: TextStyle(
                   color: AppTheme.textSecondary,
@@ -216,7 +216,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                 const SizedBox(height: 16),
                 Text(
                   authState.error!,
-                  style: TextStyle(color: AppTheme.errorColor),
+                  style: const TextStyle(color: AppTheme.errorColor),
                   textAlign: TextAlign.center,
                 ),
               ],

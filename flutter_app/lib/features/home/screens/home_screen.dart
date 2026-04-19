@@ -237,7 +237,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // Show app chooser dialog
     if (!mounted) return;
     final location = locationState.currentLocation!;
-    showDialog(
+    unawaited(showDialog(
       context: context,
       builder: (dialogContext) => AppChooserDialog(
         onWhatsApp: () {
@@ -257,7 +257,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           if (mounted) _shareViaMoreApps(location);
         },
       ),
-    );
+    ));
   }
 
   Future<void> _shareViaSms(

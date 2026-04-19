@@ -194,18 +194,18 @@ class _LiveMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pin = Icon(
+    const pin = Icon(
       Icons.navigation,
       color: AppTheme.primaryColor,
       size: 36,
-      shadows: const [Shadow(blurRadius: 6, color: Colors.black38)],
+      shadows: [Shadow(blurRadius: 6, color: Colors.black38)],
     );
     final rotated = headingDegrees == null
-        ? Icon(
+        ? const Icon(
             Icons.location_pin,
             color: AppTheme.primaryColor,
             size: 40,
-            shadows: const [Shadow(blurRadius: 6, color: Colors.black38)],
+            shadows: [Shadow(blurRadius: 6, color: Colors.black38)],
           )
         : Transform.rotate(
             angle: headingDegrees! * math.pi / 180,

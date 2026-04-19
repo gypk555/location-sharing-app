@@ -124,7 +124,7 @@ class _ScheduleCallScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Icon
-            Icon(
+            const Icon(
               Icons.phone_callback,
               size: 80,
               color: AppTheme.primaryColor,
@@ -139,7 +139,7 @@ class _ScheduleCallScreen extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Receive an incoming call to help you escape uncomfortable situations',
               style: TextStyle(color: AppTheme.textSecondary),
               textAlign: TextAlign.center,
@@ -202,9 +202,9 @@ class _ScheduleCallScreen extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      Icon(Icons.timer, color: AppTheme.warningColor),
+                      const Icon(Icons.timer, color: AppTheme.warningColor),
                       const SizedBox(width: 12),
-                      Expanded(
+                      const Expanded(
                         child: Text(
                           'Call scheduled',
                           style: TextStyle(color: AppTheme.warningColor),

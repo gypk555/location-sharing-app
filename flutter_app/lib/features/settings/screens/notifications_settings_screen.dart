@@ -29,8 +29,8 @@ class NotificationsSettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 8),
             child: Text(
               'IN-APP ALERTS',
               style: TextStyle(
@@ -85,8 +85,8 @@ class NotificationsSettingsScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 8),
             child: Text(
               'SYSTEM',
               style: TextStyle(

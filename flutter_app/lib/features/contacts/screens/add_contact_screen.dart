@@ -156,7 +156,7 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Avatar
-              Center(
+              const Center(
                 child: CircleAvatar(
                   radius: 48,
                   backgroundColor: AppTheme.primaryColor,

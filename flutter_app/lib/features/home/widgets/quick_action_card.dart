@@ -46,7 +46,7 @@ class QuickActionCard extends StatelessWidget {
               ),
               Text(
                 subtitle,
-                style: TextStyle(
+                style: const TextStyle(
                   color: AppTheme.textSecondary,
                   fontSize: 12,
                 ),

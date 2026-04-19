@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/models/contact_model.dart';
+import '../core/models/user_model.dart';
 import '../core/providers/auth_provider.dart';
 import '../features/auth/screens/otp_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
@@ -13,6 +14,9 @@ import '../features/contacts/screens/contacts_screen.dart';
 import '../features/contacts/screens/add_contact_screen.dart';
 import '../features/settings/screens/notifications_settings_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
+import '../features/settings/screens/profile_edit_screen.dart';
+import '../features/settings/screens/sos_message_screen.dart';
+import '../features/settings/screens/fake_caller_screen.dart';
 import '../features/fake_call/screens/fake_call_screen.dart';
 import '../features/live_sharing/presentation/screens/active_share_screen.dart';
 import '../features/live_sharing/presentation/screens/receive_share_screen.dart';
@@ -130,6 +134,28 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.notificationsSettings,
         builder: (context, state) => const NotificationsSettingsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.settingsProfile,
+        builder: (context, state) {
+          final user = state.extra as UserModel?;
+          if (user == null) {
+            // Fallback if accessed without extra
+            return const SettingsScreen(); 
+          }
+          return ProfileEditScreen(user: user);
+        },
+      ),
+      GoRoute(
+        path: AppRoutes.settingsSos,
+        builder: (context, state) => const SosMessageScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.settingsFakeCall,
+        builder: (context, state) {
+          final focus = state.extra as FakeCallerField? ?? FakeCallerField.name;
+          return FakeCallerScreen(focus: focus);
+        },
       ),
 
       // Live location sharing

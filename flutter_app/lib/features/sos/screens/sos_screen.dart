@@ -54,7 +54,7 @@ class SosScreen extends ConsumerWidget {
                     const SizedBox(height: 8),
                     Text(
                       _getStatusSubtext(sosState.status),
-                      style: TextStyle(color: AppTheme.textSecondary),
+                      style: const TextStyle(color: AppTheme.textSecondary),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -70,11 +70,11 @@ class SosScreen extends ConsumerWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.people, color: AppTheme.textSecondary),
+                      const Icon(Icons.people, color: AppTheme.textSecondary),
                       const SizedBox(width: 8),
                       Text(
                         '${sosState.sosContactCount} SOS contacts configured',
-                        style: TextStyle(color: AppTheme.textSecondary),
+                        style: const TextStyle(color: AppTheme.textSecondary),
                       ),
                     ],
                   ),
@@ -306,7 +306,7 @@ class _InfoCard extends StatelessWidget {
                   ),
                   Text(
                     subtitle,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
                       color: AppTheme.textSecondary,
                     ),

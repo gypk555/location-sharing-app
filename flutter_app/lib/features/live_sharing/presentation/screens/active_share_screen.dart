@@ -178,11 +178,11 @@ class _ActiveShareScreenState extends ConsumerState<ActiveShareScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       color: AppTheme.warningColor.withValues(alpha: 0.12),
-                      child: Row(
+                      child: const Row(
                         children: [
                           Icon(Icons.info_outline,
                               size: 16, color: AppTheme.warningColor),
-                          const SizedBox(width: 8),
+                          SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               'This session was started in a previous run',
@@ -219,7 +219,7 @@ class _ActiveShareScreenState extends ConsumerState<ActiveShareScreen> {
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(52),
               foregroundColor: AppTheme.errorColor,
-              side: BorderSide(color: AppTheme.errorColor),
+              side: const BorderSide(color: AppTheme.errorColor),
             ),
             onPressed: _confirmStop,
             icon: const Icon(Icons.stop_circle_outlined),
@@ -377,7 +377,7 @@ class _RecipientCard extends StatelessWidget {
                     recipient.isRegistered
                         ? 'Seeing your location live'
                         : 'Tap "Share link" to send',
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: AppTheme.textSecondary,
                       fontSize: 12,
                     ),
@@ -393,7 +393,7 @@ class _RecipientCard extends StatelessWidget {
               ),
             IconButton(
               tooltip: 'Stop for this recipient',
-              icon: Icon(Icons.close, color: AppTheme.errorColor),
+              icon: const Icon(Icons.close, color: AppTheme.errorColor),
               onPressed: onRemove,
             ),
           ],
@@ -411,11 +411,11 @@ class _WaitingForFirstFix extends StatelessWidget {
     return Container(
       color: AppTheme.backgroundColor,
       alignment: Alignment.center,
-      child: Column(
+      child: const Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 16),
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
           Text(
             'Getting your first location…',
             style: TextStyle(color: AppTheme.textSecondary),

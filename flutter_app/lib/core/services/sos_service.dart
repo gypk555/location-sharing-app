@@ -6,7 +6,7 @@ import 'location_service.dart';
 import 'secure_hive.dart';
 import 'sms_service.dart';
 import '../models/contact_model.dart';
-import '../providers/app_preferences_provider.dart' show kSosTemplatePrefKey;
+
 import '../../shared/constants/app_constants.dart';
 import '../../shared/utils/logger.dart';
 
@@ -50,7 +50,6 @@ class SosService {
   int _countdownSeconds = 5;
   String? _sosTemplateOverride;
 
-  static const _prefShakeEnabled = 'sos_shake_enabled';
   static const _prefCountdownSeconds = 'sos_countdown_seconds';
 
   bool get shakeEnabled => _isShakeEnabled;
@@ -69,27 +68,19 @@ class SosService {
   Future<void> init() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _isShakeEnabled = prefs.getBool(_prefShakeEnabled) ?? _isShakeEnabled;
       _countdownSeconds =
           prefs.getInt(_prefCountdownSeconds) ?? _countdownSeconds;
-      _sosTemplateOverride = prefs.getString(kSosTemplatePrefKey);
     } catch (e) {
       AppLogger.debug('SosService: could not load prefs: $e');
     }
   }
 
-  Future<void> setShakeEnabled(bool enabled) async {
+  void setShakeEnabled(bool enabled) {
     _isShakeEnabled = enabled;
     if (enabled) {
       startShakeDetection();
     } else {
       stopShakeDetection();
-    }
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_prefShakeEnabled, enabled);
-    } catch (e) {
-      AppLogger.debug('SosService: could not persist shake flag: $e');
     }
   }
 

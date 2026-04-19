@@ -52,7 +52,7 @@ class LocationStatusCard extends ConsumerWidget {
                 locationState.currentLocation!.address ??
                     'Lat: ${locationState.currentLocation!.latitude.toStringAsFixed(4)}, '
                         'Lng: ${locationState.currentLocation!.longitude.toStringAsFixed(4)}',
-                style: TextStyle(
+                style: const TextStyle(
                   color: AppTheme.textSecondary,
                   fontSize: 12,
                 ),

@@ -59,7 +59,7 @@ class IncomingSharesBanner extends ConsumerWidget {
                             ),
                           ),
                           const SizedBox(height: 2),
-                          Text(
+                          const Text(
                             'Tap to view live map',
                             style: TextStyle(
                               fontSize: 12,

@@ -6,6 +6,7 @@ import '../services/sos_service.dart';
 import '../models/contact_model.dart';
 import '../../shared/constants/app_constants.dart';
 import '../../shared/utils/logger.dart';
+import 'profile_settings_provider.dart';
 
 final sosServiceProvider = Provider<SosService>((ref) {
   final service = SosService();
@@ -15,7 +16,7 @@ final sosServiceProvider = Provider<SosService>((ref) {
 
 final sosStateProvider = StateNotifierProvider<SosNotifier, SosState>((ref) {
   final sosService = ref.watch(sosServiceProvider);
-  return SosNotifier(sosService);
+  return SosNotifier(ref, sosService);
 });
 
 final sosStatusStreamProvider = StreamProvider<SosStatus>((ref) {
@@ -68,11 +69,12 @@ class SosState {
 }
 
 class SosNotifier extends StateNotifier<SosState> {
+  final Ref _ref;
   final SosService _sosService;
   StreamSubscription<SosStatus>? _statusSubscription;
   StreamSubscription<int>? _countdownSubscription;
 
-  SosNotifier(this._sosService)
+  SosNotifier(this._ref, this._sosService)
       : super(SosState(
           countdown: _sosService.countdownSeconds,
           countdownSeconds: _sosService.countdownSeconds,
@@ -115,6 +117,15 @@ class SosNotifier extends StateNotifier<SosState> {
   void setShakeEnabled(bool enabled) {
     _sosService.setShakeEnabled(enabled);
     state = state.copyWith(shakeEnabled: enabled);
+    // Also update ProfileSettingsProvider for persistence
+    // Use Future.microtask to avoid provider circular dependency during build
+    Future.microtask(() {
+      final profileNotifier = _ref.read(profileSettingsProvider.notifier);
+      final currentSettings = _ref.read(profileSettingsProvider).sosSettings;
+      profileNotifier.updateSosSettings(
+        currentSettings.copyWith(shakeAlertEnabled: enabled)
+      );
+    });
   }
 
   void setCountdownSeconds(int seconds) {

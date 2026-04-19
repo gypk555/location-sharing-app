@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     name TEXT NOT NULL DEFAULT '',
     phone TEXT,
     photo_url TEXT,
+    sos_settings JSONB DEFAULT '{"shakeAlertEnabled": true, "sosMessage": null}'::jsonb,
+    fake_call_settings JSONB DEFAULT '{"enabled": true, "callerName": "Mom", "callerNumber": "+1 234 567 8900"}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     -- Phone validation: E.164 format (optional, can be null)

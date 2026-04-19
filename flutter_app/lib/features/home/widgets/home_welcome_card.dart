@@ -42,14 +42,14 @@ class HomeWelcomeCard extends ConsumerWidget {
                           fontWeight: FontWeight.bold,
                         ),
                   ),
-                  Text(
+                  const Text(
                     'Stay safe today',
                     style: TextStyle(color: AppTheme.textSecondary),
                   ),
                 ],
               ),
             ),
-            Icon(
+            const Icon(
               Icons.shield,
               color: AppTheme.successColor,
               size: 32,

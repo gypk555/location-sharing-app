@@ -430,12 +430,12 @@ class _UnifiedAuthScreenState extends ConsumerState<UnifiedAuthScreen> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.error_outline, color: AppTheme.errorColor),
+                        const Icon(Icons.error_outline, color: AppTheme.errorColor),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             authState.error!,
-                            style: TextStyle(color: AppTheme.errorColor),
+                            style: const TextStyle(color: AppTheme.errorColor),
                           ),
                         ),
                       ],
@@ -760,17 +760,17 @@ class _UnifiedAuthScreenState extends ConsumerState<UnifiedAuthScreen> {
   Widget _buildSocialLogin(AuthState authState) {
     return Column(
       children: [
-        Row(
+        const Row(
           children: [
-            const Expanded(child: Divider()),
+            Expanded(child: Divider()),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 'OR',
                 style: TextStyle(color: AppTheme.textSecondary),
               ),
             ),
-            const Expanded(child: Divider()),
+            Expanded(child: Divider()),
           ],
         ),
 

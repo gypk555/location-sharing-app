@@ -231,7 +231,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppTheme.textPrimary),
+          icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
           onPressed: () => context.go('/login'),
         ),
       ),
@@ -394,12 +394,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.error_outline, color: AppTheme.errorColor),
+                        const Icon(Icons.error_outline, color: AppTheme.errorColor),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             authState.error!,
-                            style: TextStyle(color: AppTheme.errorColor),
+                            style: const TextStyle(color: AppTheme.errorColor),
                           ),
                         ),
                       ],
@@ -413,7 +413,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
+                    const Text(
                       'Already have an account? ',
                       style: TextStyle(color: AppTheme.textSecondary),
                     ),

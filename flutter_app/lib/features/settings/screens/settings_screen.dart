@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,14 +9,13 @@ import '../../../core/providers/app_preferences_provider.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/contacts_provider.dart';
 import '../../../core/providers/password_breach_provider.dart';
+import '../../../core/providers/profile_settings_provider.dart';
 import '../../../core/providers/sos_provider.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../core/providers/location_permission_provider.dart';
-import '../../../core/services/fake_call_service.dart';
-import '../widgets/fake_caller_dialog.dart';
+
+import '../screens/fake_caller_screen.dart';
 import '../widgets/location_permission_dialog.dart';
-import '../widgets/profile_edit_dialog.dart';
-import '../widgets/sos_message_dialog.dart';
 import '../widgets/theme_mode_dialog.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -30,15 +30,10 @@ class SettingsScreen extends ConsumerWidget {
     final themeMode = ref.watch(
       appPreferencesProvider.select((s) => s.themeMode),
     );
-    final sosTemplateOverride = ref.watch(
-      appPreferencesProvider.select((s) => s.sosTemplateOverride),
-    );
-    final fakeCallerName = ref.watch(
-      appPreferencesProvider.select((s) => s.fakeCallerName),
-    );
-    final fakeCallerNumber = ref.watch(
-      appPreferencesProvider.select((s) => s.fakeCallerNumber),
-    );
+    final profileSettings = ref.watch(profileSettingsProvider);
+    final sosTemplateOverride = profileSettings.sosSettings.sosMessage;
+    final fakeCallerName = profileSettings.fakeCallSettings.callerName;
+    final fakeCallerNumber = profileSettings.fakeCallSettings.callerNumber;
 
     return Scaffold(
       appBar: AppBar(
@@ -53,25 +48,33 @@ class SettingsScreen extends ConsumerWidget {
               leading: CircleAvatar(
                 backgroundColor: AppTheme.primaryColor,
                 child: Text(
-                  authState.user?.name?.substring(0, 1).toUpperCase() ?? 'U',
+                  (profileSettings.name?.isNotEmpty == true
+                          ? profileSettings.name!.substring(0, 1)
+                          : authState.user?.name?.substring(0, 1) ?? 'U')
+                      .toUpperCase(),
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-              title: Text(authState.user?.name ?? 'User'),
+              title: Text(profileSettings.name ?? authState.user?.name ?? 'User'),
               subtitle: Text(
-                authState.user?.phone ?? authState.user?.email ?? '',
+                (profileSettings.phone?.isNotEmpty == true ? profileSettings.phone : null) ??
+                authState.user?.phone ??
+                authState.user?.email ??
+                '',
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 final user = authState.user;
                 if (user == null) return;
-                showDialog(
-                  context: context,
-                  builder: (_) => ProfileEditDialog(user: user),
+                // Pass a merged user object so the edit screen gets the latest from profileSettings
+                final mergedUser = user.copyWith(
+                  name: profileSettings.name ?? user.name,
+                  phone: profileSettings.phone ?? user.phone,
                 );
+                context.push(AppRoutes.settingsProfile, extra: mergedUser);
               },
             ),
           ),
@@ -79,7 +82,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 24),
 
           // SOS Settings
-          _SectionHeader(title: 'SOS Settings'),
+          const _SectionHeader(title: 'SOS Settings'),
           Card(
             child: Column(
               children: [
@@ -112,10 +115,7 @@ class SettingsScreen extends ConsumerWidget {
                         : 'Customized',
                   ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => showDialog(
-                    context: context,
-                    builder: (_) => const SosMessageDialog(),
-                  ),
+                  onTap: () => context.push(AppRoutes.settingsSos),
                 ),
               ],
             ),
@@ -124,47 +124,39 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 24),
 
           // Fake Call Settings
-          _SectionHeader(title: 'Fake Call'),
+          const _SectionHeader(title: 'Fake Call'),
           Card(
             child: Column(
               children: [
                 ListTile(
                   leading: const Icon(Icons.person),
                   title: const Text('Caller Name'),
-                  subtitle: Text(
-                    fakeCallerName ?? FakeCallService().callerName,
-                  ),
+                  subtitle: Text(fakeCallerName),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => showDialog(
-                    context: context,
-                    builder: (_) => const FakeCallerDialog(
-                      focus: FakeCallerField.name,
-                    ),
+                  onTap: () => context.push(
+                    AppRoutes.settingsFakeCall,
+                    extra: FakeCallerField.name,
                   ),
                 ),
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.phone),
                   title: const Text('Caller Number'),
-                  subtitle: Text(
-                    fakeCallerNumber ?? FakeCallService().callerNumber,
-                  ),
+                  subtitle: Text(fakeCallerNumber),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => showDialog(
-                    context: context,
-                    builder: (_) => const FakeCallerDialog(
-                      focus: FakeCallerField.number,
-                    ),
+                  onTap: () => context.push(
+                    AppRoutes.settingsFakeCall,
+                    extra: FakeCallerField.number,
                   ),
                 ),
                 const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.music_note),
-                  title: const Text('Ringtone'),
+                const ListTile(
+                  leading: Icon(Icons.music_note),
+                  title: Text('Ringtone'),
                   // Ringtone picker is blocked on the audio-assets TODO in
                   // CLAUDE.md. Keeping the row visible but non-interactive
                   // so users aren't surprised when it doesn't respond.
-                  subtitle: const Text('Default (coming soon)'),
+                  subtitle: Text('Default (coming soon)'),
                   enabled: false,
                 ),
               ],
@@ -174,7 +166,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 24),
 
           // App Settings
-          _SectionHeader(title: 'App'),
+          const _SectionHeader(title: 'App'),
           Card(
             child: Column(
               children: [
@@ -223,7 +215,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 24),
 
           // Data & Backup
-          _SectionHeader(title: 'Data & Backup'),
+          const _SectionHeader(title: 'Data & Backup'),
           Card(
             child: Column(
               children: [
@@ -255,8 +247,8 @@ class SettingsScreen extends ConsumerWidget {
           Card(
             color: AppTheme.errorColor.withValues(alpha: 0.1),
             child: ListTile(
-              leading: Icon(Icons.logout, color: AppTheme.errorColor),
-              title: Text(
+              leading: const Icon(Icons.logout, color: AppTheme.errorColor),
+              title: const Text(
                 'Logout',
                 style: TextStyle(color: AppTheme.errorColor),
               ),
@@ -269,7 +261,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // Version
-          Center(
+          const Center(
             child: Text(
               'Version 1.0.0',
               style: TextStyle(
@@ -291,8 +283,8 @@ class SettingsScreen extends ConsumerWidget {
     if (contacts.isEmpty) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('No contacts to export. Add some contacts first.'),
+          const SnackBar(
+            content: Text('No contacts to export. Add some contacts first.'),
             backgroundColor: AppTheme.warningColor,
           ),
         );
@@ -301,7 +293,7 @@ class SettingsScreen extends ConsumerWidget {
     }
 
     // Show loading
-    showDialog(
+    unawaited(showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => const Center(
@@ -319,7 +311,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ),
       ),
-    );
+    ));
 
     final result = await ref.read(contactsProvider.notifier).exportContacts();
 
@@ -379,7 +371,7 @@ class SettingsScreen extends ConsumerWidget {
     if (confirmed != true || !context.mounted) return;
 
     // Show loading
-    showDialog(
+    unawaited(showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => const Center(
@@ -397,7 +389,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ),
       ),
-    );
+    ));
 
     final result =
         await ref.read(contactsProvider.notifier).importContactsFromFile();
@@ -437,7 +429,7 @@ class SettingsScreen extends ConsumerWidget {
       builder: (context) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.error_outline, color: AppTheme.errorColor),
+            const Icon(Icons.error_outline, color: AppTheme.errorColor),
             const SizedBox(width: 8),
             Text(title),
           ],
@@ -458,7 +450,7 @@ class SettingsScreen extends ConsumerWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.lightbulb_outline,
                       size: 18,
                       color: AppTheme.primaryColor,
@@ -467,7 +459,7 @@ class SettingsScreen extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         recoverySuggestion,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 13,
                           color: AppTheme.textSecondary,
                         ),
@@ -481,7 +473,7 @@ class SettingsScreen extends ConsumerWidget {
               const SizedBox(height: 12),
               Text(
                 'Error code: $errorCode',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 11,
                   color: AppTheme.textSecondary,
                 ),
@@ -764,11 +756,11 @@ class _UnsyncedContactsLogoutDialogState
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Row(
+      title: const Row(
         children: [
           Icon(Icons.warning_amber, color: AppTheme.warningColor),
-          const SizedBox(width: 8),
-          const Text('Unsynced Contacts'),
+          SizedBox(width: 8),
+          Text('Unsynced Contacts'),
         ],
       ),
       content: Column(
@@ -839,7 +831,7 @@ class _UnsyncedContactsLogoutDialogState
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.lightbulb_outline,
                     size: 16,
                     color: AppTheme.primaryColor,
@@ -848,7 +840,7 @@ class _UnsyncedContactsLogoutDialogState
                   Expanded(
                     child: Text(
                       _recoverySuggestion!,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 12,
                         color: AppTheme.textSecondary,
                       ),

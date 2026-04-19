@@ -88,7 +88,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       AppLogger.error('Auth initialization failed', e);
 
       // Show user-friendly message instead of raw error
-      _safeSetState(AuthState(
+      _safeSetState(const AuthState(
         user: null,
         isLoading: false,
         hasInitialized: true,
@@ -200,8 +200,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (state.user == null) return false;
     _safeSetState(state.copyWith(isLoading: true, error: null));
     try {
+      AppLogger.debug('AuthNotifier.updateProfile called with name: $name, phone: $phone');
       if (phone != null && phone.isNotEmpty) {
+        AppLogger.debug('AuthNotifier.updateProfile calling authService.updatePhone');
         await _authService.updatePhone(phone);
+      } else {
+        AppLogger.debug('AuthNotifier.updateProfile skipped updatePhone. phone is null or empty');
       }
       if (name != null && name.isNotEmpty) {
         await _authService.updateProfile(name: name);
@@ -210,8 +214,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
         user: _authService.currentUser,
         isLoading: false,
       ));
+      AppLogger.debug('AuthNotifier.updateProfile: new state user phone: ${state.user?.phone}');
       return true;
     } catch (e) {
+      AppLogger.error('AuthNotifier.updateProfile caught error', e);
       _safeSetState(state.copyWith(isLoading: false, error: e.toString()));
       return false;
     }

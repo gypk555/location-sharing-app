@@ -119,9 +119,26 @@ class AuthService {
       AppLogger.info('AuthService._loadStoredUser start');
       final box = await _box;
       if (box.isNotEmpty) {
-        _currentUser = box.getAt(0);
-        AppLogger.info('AuthService._loadStoredUser loaded user from Hive');
-        await _saveUserToPrefs(_currentUser!);
+        final dynamic data = box.getAt(0);
+        if (data is UserModel) {
+          _currentUser = data;
+        } else if (data is Map) {
+          // Robustness: handle Map data from previous app versions or corrupted storage
+          try {
+            _currentUser = UserModel.fromJson(Map<String, dynamic>.from(data));
+            AppLogger.warning('AuthService: Migrated Map user from Hive to UserModel');
+          } catch (e) {
+            AppLogger.error('AuthService: Failed to parse user Map from Hive', e);
+            _currentUser = null;
+          }
+        } else {
+          _currentUser = null;
+        }
+        
+        if (_currentUser != null) {
+          AppLogger.info('AuthService._loadStoredUser loaded user from Hive');
+          await _saveUserToPrefs(_currentUser!);
+        }
       } else {
         AppLogger.info('AuthService._loadStoredUser no user in Hive');
       }
@@ -464,6 +481,17 @@ class AuthService {
       photoUrl: photoUrl ?? _currentUser!.photoUrl,
     );
 
+    // Update in Supabase Auth metadata if available
+    if (_supabase != null && name != null) {
+      try {
+        await _supabase!.auth.updateUser(
+          UserAttributes(data: {'name': name}),
+        );
+      } catch (e) {
+        AppLogger.warning('AuthService: Failed to update Auth metadata, proceeding with local update: $e');
+      }
+    }
+
     await _saveUser(updatedUser);
   }
 
@@ -473,7 +501,9 @@ class AuthService {
     if (_currentUser == null) return;
 
     // Normalize and validate phone
+    AppLogger.debug('AuthService.updatePhone: Normalizing phone $phone');
     final normalizedPhone = Validators.normalizePhone(phone);
+    AppLogger.debug('AuthService.updatePhone: Normalized to $normalizedPhone');
 
     if (!Validators.isValidE164(normalizedPhone)) {
       throw ValidationError.invalidFormat(
@@ -484,13 +514,19 @@ class AuthService {
 
     // Update in Supabase if available
     if (_supabase != null) {
-      await _supabase!.auth.updateUser(
-        UserAttributes(phone: normalizedPhone),
-      );
+      try {
+        await _supabase!.auth.updateUser(
+          UserAttributes(phone: normalizedPhone),
+        );
+      } catch (e) {
+        AppLogger.warning('AuthService: Failed to update Auth phone, proceeding with local update: $e');
+      }
     }
 
     // Update local user
+    AppLogger.debug('AuthService.updatePhone: Updating local user with phone $normalizedPhone');
     final updatedUser = _currentUser!.copyWith(phone: normalizedPhone);
     await _saveUser(updatedUser);
+    AppLogger.debug('AuthService.updatePhone: Local user updated. New phone: ${_currentUser?.phone}');
   }
 }

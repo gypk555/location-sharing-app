@@ -87,7 +87,7 @@ class _StartShareScreenState extends ConsumerState<StartShareScreen> {
         const SizedBox(height: 24),
         _sectionTitle('Who to share with?'),
         const SizedBox(height: 4),
-        Text(
+        const Text(
           'Registered contacts see a live map in the app. Others get an SMS, '
           'WhatsApp, or Telegram link to a private web page.',
           style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
@@ -114,12 +114,12 @@ class _StartShareScreenState extends ConsumerState<StartShareScreen> {
               padding: const EdgeInsets.all(12),
               child: Row(
                 children: [
-                  Icon(Icons.error_outline, color: AppTheme.errorColor),
+                  const Icon(Icons.error_outline, color: AppTheme.errorColor),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       state.error!,
-                      style: TextStyle(color: AppTheme.errorColor),
+                      style: const TextStyle(color: AppTheme.errorColor),
                     ),
                   ),
                 ],
@@ -288,7 +288,7 @@ class _EmptyContactsState extends StatelessWidget {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
-          Text(
+          const Text(
             'Add a contact first to start sharing your live location.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppTheme.textSecondary),

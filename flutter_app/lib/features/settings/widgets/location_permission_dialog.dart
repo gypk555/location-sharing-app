@@ -51,7 +51,7 @@ class LocationPermissionDialog extends ConsumerWidget {
                         'emergency features.'
                     : 'Location access is required for SOS alerts and live '
                         'sharing to work correctly.',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 13,
                   color: AppTheme.textSecondary,
                 ),
