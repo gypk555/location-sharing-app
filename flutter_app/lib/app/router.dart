@@ -138,10 +138,22 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.settingsProfile,
         builder: (context, state) {
-          final user = state.extra as UserModel?;
+          // GoRouter state restoration can deserialize extras back as a raw
+          // Map<String, dynamic> instead of the original UserModel object.
+          // Handle both cases to prevent the type cast crash.
+          final extra = state.extra;
+          UserModel? user;
+          if (extra is UserModel) {
+            user = extra;
+          } else if (extra is Map<String, dynamic>) {
+            try {
+              user = UserModel.fromJson(extra);
+            } catch (_) {
+              user = null;
+            }
+          }
           if (user == null) {
-            // Fallback if accessed without extra
-            return const SettingsScreen(); 
+            return const SettingsScreen();
           }
           return ProfileEditScreen(user: user);
         },

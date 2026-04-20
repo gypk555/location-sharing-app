@@ -63,14 +63,16 @@ class ProfileSettingsNotifier extends StateNotifier<ProfileSettingsState> {
 
     try {
       final data = await _service.fetchProfileSettings(userId);
-      final sosSettings = SosSettings.fromJson(data['sos_settings']);
-      final fakeCallSettings = FakeCallSettings.fromJson(data['fake_call_settings']);
+      final sosSettings = SosSettings.fromJson(
+          data['sos_settings'] as Map<String, dynamic>?);
+      final fakeCallSettings = FakeCallSettings.fromJson(
+          data['fake_call_settings'] as Map<String, dynamic>?);
       
       state = state.copyWith(
         sosSettings: sosSettings,
         fakeCallSettings: fakeCallSettings,
-        name: data['name'],
-        phone: data['phone'],
+        name: data['name'] as String?,
+        phone: data['phone'] as String?,
         isLoading: false,
       );
 
@@ -107,12 +109,14 @@ class ProfileSettingsNotifier extends StateNotifier<ProfileSettingsState> {
 
     SosSettings sos = const SosSettings();
     if (sosJson != null) {
-      sos = SosSettings.fromJson(jsonDecode(sosJson));
+      sos = SosSettings.fromJson(
+          jsonDecode(sosJson) as Map<String, dynamic>?);
     }
 
     FakeCallSettings fake = const FakeCallSettings();
     if (fakeJson != null) {
-      fake = FakeCallSettings.fromJson(jsonDecode(fakeJson));
+      fake = FakeCallSettings.fromJson(
+          jsonDecode(fakeJson) as Map<String, dynamic>?);
     }
 
     state = state.copyWith(
@@ -134,10 +138,13 @@ class ProfileSettingsNotifier extends StateNotifier<ProfileSettingsState> {
 
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _service.updateSosSettings(userId, newSettings);
-      state = state.copyWith(sosSettings: newSettings, isLoading: false);
-      _syncToInMemoryServices(newSettings, state.fakeCallSettings);
-      _cacheToPrefs(newSettings, state.fakeCallSettings);
+      final response = await _service.updateSosSettings(userId, newSettings);
+      // Use the actual DB response to update local state
+      final savedSettings = SosSettings.fromJson(
+          response['sos_settings'] as Map<String, dynamic>?);
+      state = state.copyWith(sosSettings: savedSettings, isLoading: false);
+      _syncToInMemoryServices(savedSettings, state.fakeCallSettings);
+      _cacheToPrefs(savedSettings, state.fakeCallSettings);
       AppLogger.info('ProfileSettingsNotifier: SOS settings updated successfully');
     } catch (e) {
       AppLogger.error('ProfileSettingsNotifier: Failed to update SOS settings', e);
@@ -157,10 +164,13 @@ class ProfileSettingsNotifier extends StateNotifier<ProfileSettingsState> {
 
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _service.updateFakeCallSettings(userId, newSettings);
-      state = state.copyWith(fakeCallSettings: newSettings, isLoading: false);
-      _syncToInMemoryServices(state.sosSettings, newSettings);
-      _cacheToPrefs(state.sosSettings, newSettings);
+      final response = await _service.updateFakeCallSettings(userId, newSettings);
+      // Use the actual DB response to update local state
+      final savedSettings = FakeCallSettings.fromJson(
+          response['fake_call_settings'] as Map<String, dynamic>?);
+      state = state.copyWith(fakeCallSettings: savedSettings, isLoading: false);
+      _syncToInMemoryServices(state.sosSettings, savedSettings);
+      _cacheToPrefs(state.sosSettings, savedSettings);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
@@ -172,14 +182,21 @@ class ProfileSettingsNotifier extends StateNotifier<ProfileSettingsState> {
 
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _service.updateProfile(userId, name: name, phone: phone);
+      final response = await _service.updateProfile(userId, name: name, phone: phone);
+      // Use the actual DB response to update local state only.
+      // Do NOT call setUserLocally here — it triggers authStateProvider to
+      // change, which fires _AuthNotifier.notifyListeners(), which causes
+      // GoRouter to refresh mid-save, unmounting ProfileEditScreen before
+      // context.pop() can run (the if (!mounted) return guard fires early).
+      // SettingsScreen already reads profileSettings.name ?? authUser.name,
+      // so it shows the correct updated value from profileSettingsProvider.
+      final savedName = response['name'] as String? ?? state.name;
+      final savedPhone = response['phone'] as String? ?? state.phone;
       state = state.copyWith(
-        name: name ?? state.name,
-        phone: phone ?? state.phone,
+        name: savedName,
+        phone: savedPhone,
         isLoading: false,
       );
-      // Synchronize with authStateProvider so the UI updates
-      await _ref.read(authStateProvider.notifier).updateProfile(name: name, phone: phone);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }

@@ -64,19 +64,25 @@ class _SosMessageScreenState extends ConsumerState<SosMessageScreen> {
     final newOverride =
         sanitized == AppConstants.sosMessageTemplate ? null : sanitized;
 
-    final currentSettings = ref.read(profileSettingsProvider).sosSettings;
-    await ref
-        .read(profileSettingsProvider.notifier)
-        .updateSosSettings(currentSettings.copyWith(sosMessage: newOverride));
+    try {
+      final currentSettings = ref.read(profileSettingsProvider).sosSettings;
+      await ref
+          .read(profileSettingsProvider.notifier)
+          .updateSosSettings(currentSettings.copyWith(sosMessage: newOverride));
 
-    if (!mounted) return;
-    context.pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('SOS message saved'),
-        backgroundColor: AppTheme.successColor,
-      ),
-    );
+      if (!mounted) return;
+      context.pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SOS message saved'),
+          backgroundColor: AppTheme.successColor,
+        ),
+      );
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Save failed: $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _resetToDefault() async {
@@ -86,11 +92,18 @@ class _SosMessageScreenState extends ConsumerState<SosMessageScreen> {
       _error = null;
       _saving = true;
     });
-    final currentSettings = ref.read(profileSettingsProvider).sosSettings;
-    await ref
-        .read(profileSettingsProvider.notifier)
-        .updateSosSettings(currentSettings.copyWith(sosMessage: null));
-    if (mounted) setState(() => _saving = false);
+    try {
+      final currentSettings = ref.read(profileSettingsProvider).sosSettings;
+      await ref
+          .read(profileSettingsProvider.notifier)
+          .updateSosSettings(currentSettings.copyWith(sosMessage: null));
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'Reset failed: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override

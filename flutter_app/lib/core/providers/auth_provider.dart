@@ -200,7 +200,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (state.user == null) return false;
     _safeSetState(state.copyWith(isLoading: true, error: null));
     try {
-      AppLogger.debug('AuthNotifier.updateProfile called with name: $name, phone: $phone');
+      AppLogger.debug('AuthNotifier.updateProfile called with name: ${name != null}, phone: ${phone != null}');
       if (phone != null && phone.isNotEmpty) {
         AppLogger.debug('AuthNotifier.updateProfile calling authService.updatePhone');
         await _authService.updatePhone(phone);
@@ -214,7 +214,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         user: _authService.currentUser,
         isLoading: false,
       ));
-      AppLogger.debug('AuthNotifier.updateProfile: new state user phone: ${state.user?.phone}');
+      AppLogger.debug('AuthNotifier.updateProfile: state updated successfully');
       return true;
     } catch (e) {
       AppLogger.error('AuthNotifier.updateProfile caught error', e);
@@ -240,5 +240,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   void clearError() {
     _safeSetState(state.copyWith(error: null));
+  }
+
+  /// Update the in-memory user state without hitting the network.
+  /// Used by ProfileSettingsNotifier after it has already persisted the
+  /// change to the `profiles` table — avoids a redundant Supabase Auth
+  /// round-trip (B-2 fix).
+  void setUserLocally(UserModel updatedUser) {
+    _safeSetState(state.copyWith(user: updatedUser));
   }
 }

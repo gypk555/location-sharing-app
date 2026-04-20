@@ -501,9 +501,9 @@ class AuthService {
     if (_currentUser == null) return;
 
     // Normalize and validate phone
-    AppLogger.debug('AuthService.updatePhone: Normalizing phone $phone');
+    AppLogger.debug('AuthService.updatePhone: Normalizing phone ***${phone.length > 2 ? phone.substring(phone.length - 2) : ''}');
     final normalizedPhone = Validators.normalizePhone(phone);
-    AppLogger.debug('AuthService.updatePhone: Normalized to $normalizedPhone');
+    AppLogger.debug('AuthService.updatePhone: Normalized OK');
 
     if (!Validators.isValidE164(normalizedPhone)) {
       throw ValidationError.invalidFormat(
@@ -524,9 +524,9 @@ class AuthService {
     }
 
     // Update local user
-    AppLogger.debug('AuthService.updatePhone: Updating local user with phone $normalizedPhone');
+    AppLogger.debug('AuthService.updatePhone: Updating local user');
     final updatedUser = _currentUser!.copyWith(phone: normalizedPhone);
     await _saveUser(updatedUser);
-    AppLogger.debug('AuthService.updatePhone: Local user updated. New phone: ${_currentUser?.phone}');
+    AppLogger.debug('AuthService.updatePhone: Local user updated successfully');
   }
 }

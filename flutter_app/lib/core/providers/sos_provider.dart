@@ -89,7 +89,10 @@ class SosNotifier extends StateNotifier<SosState> {
     });
 
     _countdownSubscription = _sosService.countdownStream.listen((seconds) {
-      state = state.copyWith(countdown: seconds, countdownSeconds: seconds);
+      // Only update the live tick-down value, NOT the configured duration.
+      // countdownSeconds is the user's setting (e.g. 5); countdown is the
+      // live tick (5, 4, 3 … 0).
+      state = state.copyWith(countdown: seconds);
     });
 
     _loadSosContactCount();

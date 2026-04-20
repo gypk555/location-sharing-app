@@ -42,11 +42,14 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     phone TEXT,
     photo_url TEXT,
     sos_settings JSONB DEFAULT '{"shakeAlertEnabled": true, "sosMessage": null}'::jsonb,
-    fake_call_settings JSONB DEFAULT '{"enabled": true, "callerName": "Mom", "callerNumber": "+1 234 567 8900"}'::jsonb,
+    fake_call_settings JSONB DEFAULT '{"enabled": true, "callerName": "Mom", "callerNumber": "+12345678900"}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     -- Phone validation: E.164 format (optional, can be null)
-    CONSTRAINT valid_phone CHECK (phone IS NULL OR phone ~ '^\+[1-9]\d{1,14}$')
+    CONSTRAINT valid_phone CHECK (phone IS NULL OR phone ~ '^\+[1-9]\d{1,14}$'),
+    -- Guard against oversized JSONB payloads (security fix S-2)
+    CONSTRAINT sos_settings_max_size CHECK (sos_settings IS NULL OR octet_length(sos_settings::text) < 2048),
+    CONSTRAINT fake_call_settings_max_size CHECK (fake_call_settings IS NULL OR octet_length(fake_call_settings::text) < 2048)
 );
 
 -- Auto-update updated_at trigger

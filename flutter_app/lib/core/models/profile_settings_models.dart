@@ -13,13 +13,13 @@ class SosSettings {
     // Parse boolean defensively
     bool shakeAlertEnabled = true;
     if (json['shakeAlertEnabled'] is bool) {
-      shakeAlertEnabled = json['shakeAlertEnabled'];
+      shakeAlertEnabled = json['shakeAlertEnabled'] as bool;
     }
 
     // Parse message defensively
     String? sosMessage;
     if (json['sosMessage'] is String) {
-      sosMessage = json['sosMessage'];
+      sosMessage = json['sosMessage'] as String;
     }
 
     return SosSettings(
@@ -51,13 +51,16 @@ class SosSettings {
     return null;
   }
 
+  // Sentinel to distinguish "not provided" from "explicitly null"
+  static const _unset = Object();
+
   SosSettings copyWith({
     bool? shakeAlertEnabled,
-    String? sosMessage,
+    Object? sosMessage = _unset, // use Object? so null can be passed explicitly
   }) {
     return SosSettings(
       shakeAlertEnabled: shakeAlertEnabled ?? this.shakeAlertEnabled,
-      sosMessage: sosMessage ?? this.sosMessage,
+      sosMessage: sosMessage == _unset ? this.sosMessage : sosMessage as String?,
     );
   }
 }
@@ -70,7 +73,7 @@ class FakeCallSettings {
   const FakeCallSettings({
     this.enabled = true,
     this.callerName = 'Mom',
-    this.callerNumber = '+1 234 567 8900',
+    this.callerNumber = '+12345678900',
   });
 
   factory FakeCallSettings.fromJson(Map<String, dynamic>? json) {
@@ -79,18 +82,18 @@ class FakeCallSettings {
     // Parse bool defensively
     bool enabled = true;
     if (json['enabled'] is bool) {
-      enabled = json['enabled'];
+      enabled = json['enabled'] as bool;
     }
 
     // Parse strings defensively
     String callerName = 'Mom';
     if (json['callerName'] is String) {
-      callerName = json['callerName'];
+      callerName = json['callerName'] as String;
     }
 
-    String callerNumber = '+1 234 567 8900';
+    String callerNumber = '+12345678900';
     if (json['callerNumber'] is String) {
-      callerNumber = json['callerNumber'];
+      callerNumber = json['callerNumber'] as String;
     }
 
     return FakeCallSettings(

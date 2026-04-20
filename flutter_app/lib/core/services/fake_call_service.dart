@@ -80,9 +80,11 @@ class FakeCallService {
     await _audioPlayer.stop();
     _updateStatus(FakeCallStatus.ended);
 
-    // Reset to idle after a short delay
+    // Reset to idle after a short delay (guard against disposed controller)
     Future.delayed(const Duration(milliseconds: 500), () {
-      _updateStatus(FakeCallStatus.idle);
+      if (!_statusController.isClosed) {
+        _updateStatus(FakeCallStatus.idle);
+      }
     });
   }
 
@@ -99,6 +101,8 @@ class FakeCallService {
   void dispose() {
     _scheduledCallTimer?.cancel();
     _audioPlayer.dispose();
-    _statusController.close();
+    if (!_statusController.isClosed) {
+      _statusController.close();
+    }
   }
 }
