@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Live location</title>
+
+<!-- Mainstream browsers honor <meta http-equiv> CSP too; this is a belt-and-
+     suspenders companion to the header set in vercel.json. If you change one,
+     keep the other in sync. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.tile.openstreetmap.org https://unpkg.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'none'" />
+
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="" />
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7;
+    --panel: #ffffff;
+    --text: #18181b;
+    --muted: #71717a;
+    --border: #e4e4e7;
+    --brand: #2563eb;
+    --brand-soft: #dbeafe;
+    --danger: #c62828;
+    --danger-soft: #fde2e2;
+    --good: #16a34a;
+    --good-soft: #dcfce7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0b;
+      --panel: #18181b;
+      --text: #f4f4f5;
+      --muted: #a1a1aa;
+      --border: #27272a;
+      --brand: #60a5fa;
+      --brand-soft: #1e3a8a;
+      --danger: #fca5a5;
+      --danger-soft: #450a0a;
+      --good: #86efac;
+      --good-soft: #14532d;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    overflow: hidden;
+  }
+
+  /* Layout: map fills the screen, panel docks at the top on mobile,
+     left sidebar on wider screens. */
+  #app { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; }
+  #map { width: 100%; height: 100%; background: #ddd; }
+  @media (min-width: 720px) {
+    #app { grid-template-rows: 1fr; grid-template-columns: 360px 1fr; }
+  }
+
+  #panel {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 20px;
+    display: flex; flex-direction: column; gap: 12px;
+    z-index: 500;
+  }
+  @media (min-width: 720px) {
+    #panel { border-bottom: none; border-right: 1px solid var(--border); overflow-y: auto; }
+  }
+
+  .header { display: flex; align-items: center; gap: 12px; }
+  .avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--brand-soft); color: var(--brand);
+    display: grid; place-items: center;
+    font-weight: 600; font-size: 18px; flex-shrink: 0;
+  }
+  .header-text h1 { font-size: 16px; margin: 0 0 2px; line-height: 1.2; }
+  .header-text p  { font-size: 13px; margin: 0; color: var(--muted); }
+
+  .status {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--good-soft); color: var(--good);
+    font-size: 12px; font-weight: 500;
+    align-self: flex-start;
+  }
+  .status .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: currentColor;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .status[data-state="offline"] { background: var(--danger-soft); color: var(--danger); }
+  .status[data-state="offline"] .dot { animation: none; }
+  .status[data-state="loading"] { background: var(--border); color: var(--muted); }
+  .status[data-state="loading"] .dot { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  dl.meta {
+    margin: 0; display: grid;
+    grid-template-columns: auto 1fr; gap: 8px 16px;
+    font-size: 14px;
+  }
+  dl.meta dt { color: var(--muted); }
+  dl.meta dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+  .marker {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--brand); border: 3px solid #fff;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18), 0 2px 6px rgba(0,0,0,0.18);
+    position: relative;
+  }
+  .marker .arrow {
+    position: absolute; top: -10px; left: 50%;
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 10px solid var(--brand);
+    transform: translateX(-50%);
+    transform-origin: 50% 16px;
+    transition: transform 0.4s ease-out;
+  }
+  .marker.no-heading .arrow { display: none; }
+
+  #ended {
+    position: fixed; inset: 0;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: grid; place-items: center;
+    padding: 24px; z-index: 1000;
+  }
+  #ended .card {
+    max-width: 360px; text-align: center;
+    background: var(--panel);
+    border-radius: 16px; padding: 32px 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+  }
+  #ended .icon {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--border); color: var(--muted);
+    display: grid; place-items: center; margin: 0 auto;
+    font-size: 28px;
+  }
+  #ended h2 { font-size: 20px; margin: 16px 0 8px; }
+  #ended p  { margin: 0; color: var(--muted); line-height: 1.5; font-size: 15px; }
+
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <main id="app">
+    <aside id="panel">
+      <div class="header">
+        <div class="avatar" id="avatar">·</div>
+        <div class="header-text">
+          <h1 id="owner-name">Loading…</h1>
+          <p>is sharing live location</p>
+        </div>
+      </div>
+      <div class="status" id="status" data-state="loading">
+        <span class="dot"></span>
+        <span id="status-text">Connecting…</span>
+      </div>
+      <dl class="meta">
+        <dt>Last update</dt>  <dd id="last-update">—</dd>
+        <dt>Accuracy</dt>     <dd id="accuracy">—</dd>
+        <dt>Speed</dt>        <dd id="speed">—</dd>
+        <dt>Heading</dt>      <dd id="heading">—</dd>
+        <dt>Expires</dt>      <dd id="expiry">—</dd>
+      </dl>
+    </aside>
+    <div id="map" role="application" aria-label="Live location map"></div>
+  </main>
+
+  <div id="ended" hidden>
+    <div class="card">
+      <div class="icon">●</div>
+      <h2 id="ended-title">Sharing has ended</h2>
+      <p id="ended-body">This live location is no longer being updated.</p>
+    </div>
+  </div>
+
+  <!-- Runtime config (project URL + anon key). Copy config.example.js to
+       config.js and fill in your values before deploying. -->
+  <script src="./config.js"></script>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    // ===== DOM refs (resolve up-front so error paths can show overlays) =====
+    const $ownerName  = document.getElementById("owner-name");
+    const $avatar     = document.getElementById("avatar");
+    const $statusEl   = document.getElementById("status");
+    const $statusText = document.getElementById("status-text");
+    const $lastUpdate = document.getElementById("last-update");
+    const $accuracy   = document.getElementById("accuracy");
+    const $speed      = document.getElementById("speed");
+    const $heading    = document.getElementById("heading");
+    const $expiry     = document.getElementById("expiry");
+    const $ended      = document.getElementById("ended");
+    const $endedTitle = document.getElementById("ended-title");
+    const $endedBody  = document.getElementById("ended-body");
+
+    function showOverlay(title, body) {
+      $endedTitle.textContent = title;
+      $endedBody.textContent  = body;
+      $ended.hidden = false;
+    }
+
+    // ===== bootstrap: config + token =====
+    const cfg = window.LIVE_SHARE_CONFIG;
+    if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY ||
+        cfg.SUPABASE_URL.includes("YOUR-REF") ||
+        cfg.SUPABASE_ANON_KEY.includes("YOUR-")) {
+      // Misconfigured deploy — surface clearly instead of silently hanging.
+      showOverlay(
+        "Configuration missing",
+        "This live-location viewer hasn't been configured. Whoever runs it needs to set SUPABASE_URL and SUPABASE_ANON_KEY in config.js."
+      );
+      throw new Error("LIVE_SHARE_CONFIG missing or unfilled");
+    }
+
+    // URLs look like /s/<uuid>. Parse the token from the path; tolerate a
+    // trailing slash, and fall back to ?t=<uuid> for forwarded/edited links.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    function parseToken() {
+      const segs = window.location.pathname.split("/").filter(Boolean);
+      if (segs[0] === "s" && segs[1]) return segs[1];
+      const q = new URLSearchParams(window.location.search).get("t");
+      if (q) return q;
+      return "";
+    }
+    const token = parseToken();
+    if (!token || !UUID_RE.test(token)) {
+      showOverlay(
+        "This link isn't valid",
+        "The live-location link you opened is malformed or has expired. Ask the sender for a fresh link."
+      );
+      throw new Error("invalid token in URL");
+    }
+
+    const BOOT = { url: cfg.SUPABASE_URL, key: cfg.SUPABASE_ANON_KEY, token };
+
+    const supabase = createClient(BOOT.url, BOOT.key, {
+      // Cap event rate to be polite — owner cadence is 5–30s, so 5/sec is
+      // already 25× headroom and prevents a runaway loop from melting the
+      // browser if a trigger ever misbehaves.
+      realtime: { params: { eventsPerSecond: 5 } },
+    });
+
+    // ===== state =====
+    /** @type {"loading" | "active" | "ended" | "error"} */
+    let state = "loading";
+    let expiresAt    = null;     // Date | null (null = "until stopped")
+    let lastFix      = null;
+    let lastFixAt    = 0;
+    let pollTimer    = null;
+    let watchdogTimer = null;
+    let countdownTimer = null;
+    let lastUpdateTimer = null;
+
+    // ===== Leaflet =====
+    let map = null;
+    let marker = null;
+    let accuracyCircle = null;
+    let userInteracted = false;
+
+    function initMap(lat, lng) {
+      map = L.map("map", { zoomControl: true }).setView([lat, lng], 16);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+      map.on("dragstart zoomstart", () => { userInteracted = true; });
+    }
+
+    function ensureMarker(lat, lng, heading) {
+      const arrow = (heading != null && Number.isFinite(heading))
+        ? `<div class="arrow" style="transform: translateX(-50%) rotate(${heading}deg)"></div>`
+        : "";
+      const html = `<div class="marker ${heading == null ? 'no-heading' : ''}">${arrow}</div>`;
+      const icon = L.divIcon({
+        className: "",
+        html,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
+      });
+      if (!marker) {
+        marker = L.marker([lat, lng], { icon, interactive: false }).addTo(map);
+      } else {
+        marker.setLatLng([lat, lng]);
+        marker.setIcon(icon);
+      }
+    }
+
+    function ensureAccuracyCircle(lat, lng, accuracy) {
+      if (accuracy == null || !Number.isFinite(accuracy)) {
+        if (accuracyCircle) { accuracyCircle.remove(); accuracyCircle = null; }
+        return;
+      }
+      if (!accuracyCircle) {
+        accuracyCircle = L.circle([lat, lng], {
+          radius: accuracy, color: "#2563eb", fillColor: "#2563eb",
+          fillOpacity: 0.12, weight: 1, interactive: false,
+        }).addTo(map);
+      } else {
+        accuracyCircle.setLatLng([lat, lng]);
+        accuracyCircle.setRadius(accuracy);
+      }
+    }
+
+    function recenterIfNeeded(lat, lng) {
+      if (!map) return;
+      if (!userInteracted) {
+        map.panTo([lat, lng], { animate: true, duration: 0.4 });
+        return;
+      }
+      const inner = map.getBounds().pad(-0.15);
+      if (!inner.contains([lat, lng])) {
+        map.panTo([lat, lng], { animate: true, duration: 0.4 });
+      }
+    }
+
+    // ===== formatting helpers =====
+    function compassDir(deg) {
+      if (deg == null || !Number.isFinite(deg)) return null;
+      const dirs = ["N","NE","E","SE","S","SW","W","NW"];
+      return dirs[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
+    }
+    function fmtSpeed(mps) {
+      if (mps == null || !Number.isFinite(mps) || mps < 0) return "—";
+      if (mps < 0.5) return "Stopped";
+      return `${(mps * 3.6).toFixed(1)} km/h`;
+    }
+    function fmtAccuracy(m) {
+      if (m == null || !Number.isFinite(m)) return "—";
+      return `±${Math.round(m)} m`;
+    }
+    function fmtHeading(deg) {
+      const d = compassDir(deg);
+      if (!d) return "—";
+      return `${d} (${Math.round(deg)}°)`;
+    }
+    function fmtAge(ms) {
+      const s = Math.max(0, Math.floor(ms / 1000));
+      if (s < 5)  return "Just now";
+      if (s < 60) return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60) return `${m}m ago`;
+      const h = Math.floor(m / 60);
+      return `${h}h ${m % 60}m ago`;
+    }
+    function fmtRemaining(ms) {
+      const s = Math.max(0, Math.floor(ms / 1000));
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      if (h > 0) return `${h}h ${m}m`;
+      if (m > 0) return `${m}m ${String(sec).padStart(2, "0")}s`;
+      return `${sec}s`;
+    }
+    function initials(name) {
+      if (!name) return "·";
+      const parts = name.trim().split(/\s+/).slice(0, 2);
+      return parts.map(p => p[0]?.toUpperCase() ?? "").join("") || "·";
+    }
+
+    // ===== rendering =====
+    function setStatus(stateName, text) {
+      $statusEl.dataset.state = stateName;
+      $statusText.textContent = text;
+    }
+    function renderHeader(ownerName) {
+      if (ownerName) {
+        $ownerName.textContent = ownerName;
+        $avatar.textContent = initials(ownerName);
+      }
+    }
+    function render(point) {
+      if (state === "ended" || state === "error") return;
+      if (point.owner_name) renderHeader(point.owner_name);
+
+      const hasFix = point.latitude != null && point.longitude != null;
+      if (!hasFix) {
+        setStatus("loading", "Waiting for first GPS fix…");
+        return;
+      }
+
+      const lat = +point.latitude;
+      const lng = +point.longitude;
+      const acc = point.accuracy != null ? +point.accuracy : null;
+      const spd = point.speed    != null ? +point.speed    : null;
+      const hdg = point.heading  != null ? +point.heading  : null;
+      const ts  = point.location_timestamp ? new Date(point.location_timestamp) : new Date();
+
+      lastFix   = { lat, lng, acc, spd, hdg, ts };
+      lastFixAt = Date.now();
+
+      if (!map) initMap(lat, lng);
+      ensureMarker(lat, lng, hdg);
+      ensureAccuracyCircle(lat, lng, acc);
+      recenterIfNeeded(lat, lng);
+
+      setStatus("live", "Live");
+      $accuracy.textContent  = fmtAccuracy(acc);
+      $speed.textContent     = fmtSpeed(spd);
+      $heading.textContent   = fmtHeading(hdg);
+      $lastUpdate.textContent = fmtAge(Date.now() - ts.getTime());
+      state = "active";
+    }
+
+    function setEnded(reason) {
+      if (state === "ended") return;
+      state = "ended";
+      stopPolling();
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+      if (countdownTimer) clearInterval(countdownTimer);
+      if (lastUpdateTimer) clearInterval(lastUpdateTimer);
+      const reasonCopy = {
+        revoked: "The sharer has stopped sharing their location.",
+        expired: "The sharing window has expired.",
+        inactive: "This share is no longer active.",
+      };
+      showOverlay("Sharing has ended",
+        reasonCopy[reason] || "This live location is no longer being updated.");
+    }
+
+    function setError(kind) {
+      if (state === "error") return;
+      state = "error";
+      stopPolling();
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+      if (countdownTimer) clearInterval(countdownTimer);
+      if (lastUpdateTimer) clearInterval(lastUpdateTimer);
+      const titleByKind = { invalid: "This link isn't valid" };
+      const bodyByKind  = {
+        invalid: "The live-location link you opened doesn't match any active share. Ask the sender for a fresh link.",
+      };
+      showOverlay(titleByKind[kind]  || "Something went wrong",
+                  bodyByKind[kind]   || "We couldn't load this live location.");
+    }
+
+    // ===== fetch + polling + watchdog =====
+    async function fetchOnce() {
+      try {
+        const { data, error } = await supabase.rpc("get_live_share", { p_token: BOOT.token });
+        if (error) {
+          if (error.code === "P0001") return setError("invalid");
+          if (error.code === "P0002") return setEnded("expired");
+          return; // network/5xx — retry on next tick
+        }
+        const row = Array.isArray(data) ? data[0] : data;
+        if (!row) return setError("invalid");
+        if (row.is_active === false) return setEnded("inactive");
+        expiresAt = row.expires_at ? new Date(row.expires_at) : null;
+        render(row);
+      } catch (_e) {
+        // Network/transport failure. Polling/watchdog will retry.
+      }
+    }
+
+    function startPolling() {
+      if (pollTimer || state === "ended" || state === "error") return;
+      fetchOnce();
+      pollTimer = setInterval(fetchOnce, 5000);
+      if (state === "loading") setStatus("loading", "Reconnecting…");
+    }
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    // 12s watchdog: if no broadcast arrives within this window after
+    // SUBSCRIBE, or after the last broadcast, switch to polling.
+    function armWatchdog() {
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(() => { startPolling(); }, 12000);
+    }
+
+    // ===== Realtime broadcast =====
+    const channel = supabase.channel("share:" + BOOT.token, {
+      config: { private: true },
+    });
+
+    channel.on("broadcast", { event: "position" }, (msg) => {
+      stopPolling();
+      armWatchdog();
+      render(msg.payload);
+    });
+    channel.on("broadcast", { event: "share_ended" }, (msg) => {
+      setEnded(msg.payload?.reason ?? "inactive");
+    });
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        armWatchdog();
+      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        startPolling();
+      }
+    });
+
+    // ===== expiry countdown + last-update tickers =====
+    countdownTimer = setInterval(() => {
+      if (state === "ended" || state === "error") return;
+      if (!expiresAt) { $expiry.textContent = "Until stopped"; return; }
+      const ms = expiresAt - new Date();
+      if (ms <= 0) { setEnded("expired"); return; }
+      $expiry.textContent = fmtRemaining(ms);
+    }, 1000);
+
+    lastUpdateTimer = setInterval(() => {
+      if (state === "ended" || state === "error") return;
+      if (!lastFixAt) return;
+      $lastUpdate.textContent = fmtAge(Date.now() - lastFixAt);
+      if (Date.now() - lastFixAt > 60_000 && state === "active") {
+        setStatus("offline", "Connection lost");
+      }
+    }, 1000);
+
+    // ===== bootstrap =====
+    fetchOnce();
+  </script>
+</body>
+</html>

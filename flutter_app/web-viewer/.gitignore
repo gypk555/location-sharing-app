@@ -1,0 +1,6 @@
+# config.js holds the project's anon key. It's public by design, but we
+# still keep it out of git so the example file is the single source of
+# truth in the repo and each deploy can have its own values.
+config.js
+.vercel/
+node_modules/

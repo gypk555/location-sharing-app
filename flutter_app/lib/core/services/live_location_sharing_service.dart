@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -134,14 +135,27 @@ class LiveLocationSharingService {
 
   SupabaseClient get _supabase => Supabase.instance.client;
 
-  /// Build the public URL for a share token. Points to the live-share
-  /// Edge Function which returns an HTML page that polls get_live_share.
-  /// Safe to call even when the Edge Function isn't deployed yet — the
-  /// URL just 404s in that case. Public so callers that reconstruct a
+  /// Build the public URL for a share token. Points to the Vercel-hosted
+  /// static viewer (see `flutter_app/web-viewer/`). The viewer URL must be
+  /// configured via the `LIVE_SHARE_BASE_URL` env var; if it's missing we
+  /// fall back to the historical Supabase Edge Function URL so existing
+  /// builds keep at least returning *something* (even though Supabase's
+  /// gateway sandboxes that response — see web-viewer/README.md for why
+  /// we moved off Edge Functions). Public so callers that reconstruct a
   /// [SharedRecipient] from a raw DB row can derive the same URL.
   String publicUrlForToken(String token) {
-    final base = _supabase.rest.url.replaceFirst('/rest/v1', '');
-    return '$base/functions/v1/live-share/$token';
+    final configured = dotenv.maybeGet('LIVE_SHARE_BASE_URL')?.trim();
+    if (configured != null && configured.isNotEmpty) {
+      final base = configured.endsWith('/')
+          ? configured.substring(0, configured.length - 1)
+          : configured;
+      return '$base/s/$token';
+    }
+    // Legacy fallback. Will render as raw HTML source in browsers due to
+    // Supabase's anti-phishing sandbox; deploy the Vercel viewer and set
+    // LIVE_SHARE_BASE_URL in .env to fix.
+    final supaBase = _supabase.rest.url.replaceFirst('/rest/v1', '');
+    return '$supaBase/functions/v1/live-share/$token';
   }
 
   /// Resolve a phone to a registered user id via find_user_by_phone RPC.
