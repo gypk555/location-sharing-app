@@ -1,0 +1,66 @@
+# Render Blueprint for the public live-share viewer (static site).
+#
+# Deploy: Render dashboard -> New -> Blueprint -> connect this repo.
+# Render reads this file, runs build.js to generate config.js from the
+# environment, and publishes the folder.
+#
+# NO SECRETS LIVE IN THIS FILE. SUPABASE_URL and SUPABASE_ANON_KEY are
+# declared with `sync: false`, which means Render will prompt you to set
+# them in the dashboard (Environment tab). build.js bakes them into
+# config.js at build time. NEVER add the service_role key anywhere.
+
+services:
+  - type: web
+    name: live-share-viewer
+    runtime: static
+
+    # This repo's viewer code lives on the `updates` branch.
+    # Change this if you deploy from a different branch.
+    branch: updates
+
+    # Treat the viewer folder as the build/publish root.
+    rootDir: flutter_app/web-viewer
+    buildCommand: node build.js
+    staticPublishPath: .
+
+    pullRequestPreviewsEnabled: false
+
+    # Declared but NOT valued here. Render asks for these in the
+    # dashboard; build.js reads them from the build environment.
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+
+    # /s/<token> must serve index.html WITHOUT changing the URL, so the
+    # page's location.pathname token parser works. A rewrite (not a
+    # redirect) keeps the token in the address bar.
+    routes:
+      - type: rewrite
+        source: /s/*
+        destination: /index.html
+
+    # Same hardening as netlify.toml / vercel.json / the <meta> tags.
+    headers:
+      - path: /*
+        name: X-Robots-Tag
+        value: noindex, nofollow
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=31536000; includeSubDomains; preload
+      - path: /*
+        name: Cache-Control
+        value: no-store, max-age=0
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.tile.openstreetmap.org https://unpkg.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"

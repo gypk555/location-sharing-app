@@ -135,27 +135,24 @@ class LiveLocationSharingService {
 
   SupabaseClient get _supabase => Supabase.instance.client;
 
-  /// Build the public URL for a share token. Points to the Vercel-hosted
-  /// static viewer (see `flutter_app/web-viewer/`). The viewer URL must be
-  /// configured via the `LIVE_SHARE_BASE_URL` env var; if it's missing we
-  /// fall back to the historical Supabase Edge Function URL so existing
-  /// builds keep at least returning *something* (even though Supabase's
-  /// gateway sandboxes that response — see web-viewer/README.md for why
-  /// we moved off Edge Functions). Public so callers that reconstruct a
-  /// [SharedRecipient] from a raw DB row can derive the same URL.
+  /// Build the public URL for a share token.
+  ///
+  /// Prefers `LIVE_SHARE_BASE_URL` from `.env` — the static web viewer
+  /// (Surge / Netlify / Vercel, or the local `local-server.js` during
+  /// testing) — producing `<base>/s/<token>`. Falls back to the legacy
+  /// Supabase Edge Function path only when the env var is unset, so
+  /// older configs keep resolving. Public so callers that reconstruct a
+  /// [SharedRecipient] from a raw DB row derive the same URL.
   String publicUrlForToken(String token) {
-    final configured = dotenv.maybeGet('LIVE_SHARE_BASE_URL')?.trim();
+    final configured = dotenv.env['LIVE_SHARE_BASE_URL']?.trim();
     if (configured != null && configured.isNotEmpty) {
       final base = configured.endsWith('/')
           ? configured.substring(0, configured.length - 1)
           : configured;
       return '$base/s/$token';
     }
-    // Legacy fallback. Will render as raw HTML source in browsers due to
-    // Supabase's anti-phishing sandbox; deploy the Vercel viewer and set
-    // LIVE_SHARE_BASE_URL in .env to fix.
-    final supaBase = _supabase.rest.url.replaceFirst('/rest/v1', '');
-    return '$supaBase/functions/v1/live-share/$token';
+    final base = _supabase.rest.url.replaceFirst('/rest/v1', '');
+    return '$base/functions/v1/live-share/$token';
   }
 
   /// Resolve a phone to a registered user id via find_user_by_phone RPC.

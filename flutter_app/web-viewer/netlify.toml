@@ -1,0 +1,23 @@
+# Netlify config for the public live-share viewer.
+# Equivalent of vercel.json — Netlify ignores vercel.json, so this file
+# is what actually takes effect on Netlify Drop / Netlify deploys.
+
+# /s/<token> must serve index.html WITHOUT changing the browser URL.
+# status = 200 makes this a rewrite (not a 3xx redirect), so the token
+# stays in the address bar for the page's JS to read.
+[[redirects]]
+  from = "/s/*"
+  to = "/index.html"
+  status = 200
+
+# Security headers on every response. Mirrors vercel.json exactly.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    Cache-Control = "no-store, max-age=0"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.tile.openstreetmap.org https://unpkg.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"

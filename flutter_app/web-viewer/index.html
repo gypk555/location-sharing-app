@@ -5,9 +5,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Live location</title>
 
+<!-- Hosts without custom-header support (e.g. Surge, GitHub Pages) can't
+     send X-Robots-Tag / Referrer-Policy as HTTP headers, so we assert the
+     same protections here. On header-capable hosts (netlify.toml /
+     vercel.json) these are belt-and-suspenders duplicates. The actual
+     security boundary is the unguessable token + Postgres RLS, not these. -->
+<meta name="robots" content="noindex, nofollow" />
+<meta name="referrer" content="no-referrer" />
+
 <!-- Mainstream browsers honor <meta http-equiv> CSP too; this is a belt-and-
-     suspenders companion to the header set in vercel.json. If you change one,
-     keep the other in sync. -->
+     suspenders companion to the header set in netlify.toml / vercel.json.
+     If you change one, keep all three in sync. -->
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.tile.openstreetmap.org https://unpkg.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'none'" />
 
@@ -192,8 +200,11 @@
   </div>
 
   <!-- Runtime config (project URL + anon key). Copy config.example.js to
-       config.js and fill in your values before deploying. -->
-  <script src="./config.js"></script>
+       config.js and fill in your values before deploying.
+       Absolute path (not ./config.js): the page is served at /s/<token>,
+       so a relative ref would resolve to /s/config.js and get swallowed
+       by the /s/* -> index.html rewrite. /config.js hits the root. -->
+  <script src="/config.js"></script>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="

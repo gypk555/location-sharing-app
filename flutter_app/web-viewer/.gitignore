@@ -4,3 +4,8 @@
 config.js
 .vercel/
 node_modules/
+
+# Generated from index.html at deploy time by deploy-surge.sh (Surge's
+# SPA-fallback file for the /s/<token> route). index.html is the source
+# of truth — never edit 200.html by hand.
+200.html
